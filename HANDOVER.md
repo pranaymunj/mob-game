@@ -164,3 +164,51 @@ Android permissions (location, notifications) are already configured in
    how each feature's backend works.
 
 See `GAME_OVERVIEW.md` for a plain-English tour of all the features.
+
+---
+
+## 9. Fastest start for a teammate (share the existing backend)
+
+If you're joining to help develop and just want to run the SAME game world
+Pranay has, you don't need to create any database — reuse his Supabase.
+
+**Pranay sends you 4 values privately (WhatsApp/email — NEVER in the repo):**
+
+| # | Value | Where Pranay finds it |
+|---|---|---|
+| 1 | `SUPABASE_URL` | his `.env` file |
+| 2 | `SUPABASE_PUBLISHABLE_KEY` | his `.env` file |
+| 3 | `MAPBOX_PUBLIC_TOKEN` (`pk.…`) | his `.env` file |
+| 4 | Mapbox **secret** token (`sk.…`) | his `~/.netrc` file (only needed to build on Android) |
+
+**Then you do:**
+
+1. Install Flutter + Android Studio; run `flutter doctor` and fix anything red.
+2. Get the code:
+   ```bash
+   git clone https://github.com/pranaymunj/mob-game.git
+   cd mob-game
+   flutter pub get
+   ```
+3. Create `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+   Open `.env` and paste values 1–3 above.
+4. Add the Mapbox secret token (for Android builds) — edit
+   `~/.gradle/gradle.properties` and add:
+   ```
+   MAPBOX_DOWNLOADS_TOKEN=sk.the_secret_token
+   ```
+5. On the Android phone: Settings → About → tap **Build Number** 7× to unlock
+   Developer Options, then enable **USB debugging**. Plug the phone in, then:
+   ```bash
+   flutter run --release
+   ```
+
+That's it — no migrations to run, because you're on the shared database. You'll
+see the same turf, players and leaderboards as Pranay.
+
+**Heads-up:** you share the same database, so wiping/changing data affects both
+of you. Fine for co-development; if you want your own separate DB later, use
+section 4 Option B.
