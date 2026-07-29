@@ -21,7 +21,6 @@ import '../../services/settings_service.dart';
 import '../perks/perk_info.dart';
 import '../shop/cosmetics_catalog.dart';
 import 'capture_celebration.dart';
-import 'first_run_guide.dart';
 import 'run_controller.dart';
 import 'run_state.dart';
 import 'run_summary_screen.dart';
@@ -42,7 +41,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
   bool _ghostPlaying = false;
   List<Pickup> _pickups = const [];
   bool _collecting = false; // guards against double-collect on rapid points
-  bool _firstRun = false; // show the guided first-capture tutorial
+  int _treasuresShown = 0; // distance milestones celebrated this run
   Widget? _celebration; // the big capture payoff overlay, when playing
   Timer? _ticker; // 1s tick to keep the live elapsed-time readout moving
 
@@ -68,8 +67,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
       await mapService.centerOn(lng: here.lng, lat: here.lat);
       await _applyEquippedTrail();
       await _loadTurf();
-      await _setupFirstRunGuide(); // before ghost, so it owns the guide layer
-      if (!_firstRun) await _loadGhost();
+      await _loadGhost();
       await _loadPickups();
       _subscribeRealtime();
     }
@@ -127,17 +125,6 @@ class _RunScreenState extends ConsumerState<RunScreen> {
         },
       );
     });
-  }
-
-  // First-timers get a suggested square drawn beside them to walk, so their
-  // first capture is guided rather than guesswork.
-  Future<void> _setupFirstRunGuide() async {
-    if (await FirstRunGuide.isComplete() || _lng == null) return;
-    if (!mounted) return;
-    setState(() => _firstRun = true);
-    await ref.read(mapServiceProvider).drawSuggestedLoop(
-          FirstRunGuide.suggestedLoop(lng: _lng!, lat: _lat!),
-        );
   }
 
   // Spawn (if needed) and draw power-up pickups around the player.
@@ -260,6 +247,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
       // Safety prompt when a run begins (CLAUDE.md Part 5).
       final startedRun = next.isActive && !(prev?.isActive ?? false);
       if (startedRun) {
+        _treasuresShown = 0;
         if (settings.haptics) HapticFeedback.selectionClick();
         messenger
           ..clearSnackBars()
@@ -271,6 +259,26 @@ class _RunScreenState extends ConsumerState<RunScreen> {
           ));
       }
 
+      // Distance treasures: celebrate each milestone crossed while walking.
+      if (next.isActive) {
+        final earned =
+            (next.sessionDistanceM / AppConstants.treasureEveryMeters).floor();
+        if (earned > _treasuresShown) {
+          _treasuresShown = earned;
+          final withPerk = _treasuresShown % AppConstants.treasurePerkEvery == 0;
+          if (settings.haptics) HapticFeedback.mediumImpact();
+          if (settings.sound) SystemSound.play(SystemSoundType.click);
+          messenger
+            ..clearSnackBars()
+            ..showSnackBar(SnackBar(
+              content: Text(withPerk
+                  ? '🎁 Treasure! +${AppConstants.treasureCoins} coins & a perk!'
+                  : '🎁 Treasure! +${AppConstants.treasureCoins} coins'),
+              duration: const Duration(seconds: 2),
+            ));
+        }
+      }
+
       // A new loop was closed this update -> redraw claims + toast the area.
       final gainedClaim = next.claims.length > (prev?.claims.length ?? 0);
       if (gainedClaim) {
@@ -280,12 +288,6 @@ class _RunScreenState extends ConsumerState<RunScreen> {
         // Now that they've felt the payoff, it's a fair moment to ask about
         // streak reminders (asking at app launch tanks opt-in).
         _offerRemindersOnce();
-        // Tutorial served its purpose — retire the guide.
-        if (_firstRun) {
-          FirstRunGuide.markComplete();
-          mapService.clearSuggestedLoop();
-          setState(() => _firstRun = false);
-        }
         // Instant local fill in my color; realtime will reconcile the
         // authoritative server turf (including any steal) moments later.
         mapService.drawClaims(next.claims);
@@ -346,18 +348,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
             child: Column(
               children: [
                 _StatsPanel(run: run, settings: ref.watch(settingsProvider)),
-                if (run.isActive && _firstRun) ...[
-                  const SizedBox(height: 10),
-                  _CoachHud(
-                    trailPoints: run.trail.length,
-                    distanceWalked: run.sessionDistanceM,
-                    metersToClose: run.trail.length >= 3
-                        ? ref
-                            .read(geometryServiceProvider)
-                            .distanceMeters(run.trail.last, run.trail.first)
-                        : null,
-                  ),
-                ] else if (run.isActive) ...[
+                if (run.isActive) ...[
                   const SizedBox(height: 10),
                   _LoopHud(
                     points: run.trail.length,
@@ -481,67 +472,6 @@ class _StatsPanel extends StatelessWidget {
   }
 }
 
-// Step-by-step coaching for a player's very first run, so their first capture
-// is guided instead of guesswork. Retired permanently once they succeed.
-class _CoachHud extends StatelessWidget {
-  final int trailPoints;
-  final double distanceWalked;
-  final double? metersToClose;
-  const _CoachHud({
-    required this.trailPoints,
-    required this.distanceWalked,
-    required this.metersToClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final step = FirstRunGuide.coach(
-      trailPoints: trailPoints,
-      metersToClose: metersToClose,
-      distanceWalked: distanceWalked,
-    );
-    final gold = AppColors.ownershipPalette[3];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: gold, width: 2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.school, color: gold, size: 18),
-              const SizedBox(width: 8),
-              Text('FIRST RUN',
-                  style: TextStyle(
-                      color: gold,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(step.title,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(step.body,
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        ],
-      ),
-    );
-  }
-}
-
-// The core tension: how far you are from closing your open loop. Without this
-// a run just feels like GPS tracking — this makes it a goal.
 // The manual-claim rescue button — a pulsing green CTA that appears when you're
 // close enough to force the loop closed.
 class _ClaimNowButton extends StatefulWidget {

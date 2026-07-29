@@ -22,6 +22,12 @@ class AppConstants {
   // this floor it would bank an empty claim and toast "+0 m²".
   static const double minClaimAreaM2 = 50.0;
 
+  // Distance treasures: every this-many metres walked is a "treasure" (bonus
+  // coins), and every 3rd treasure also drops a perk. Must match finish_run().
+  static const double treasureEveryMeters = 500.0;
+  static const int treasureCoins = 30;
+  static const int treasurePerkEvery = 3; // a perk every 3rd treasure (1500m)
+
   // Manual claim: if you're within this distance of your start, the "Claim"
   // button can force-close the loop with a straight line. Rescues captures
   // when GPS drift stops the auto-close from triggering.
