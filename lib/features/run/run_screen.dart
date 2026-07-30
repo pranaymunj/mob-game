@@ -357,8 +357,6 @@ class _RunScreenState extends ConsumerState<RunScreen> {
                     pickupsNearby: _pickups.length,
                     gpsAccuracy: run.gpsAccuracy,
                   ),
-                  const SizedBox(height: 8),
-                  _GpsDiagnostics(run: run),
                 ],
               ],
             ),
@@ -602,53 +600,6 @@ class _LoopHud extends StatelessWidget {
           Text(sub,
               style: const TextStyle(color: Colors.white60, fontSize: 11)),
         ],
-      ),
-    );
-  }
-}
-
-// Live GPS telemetry. Deliberately visible while we calibrate the noise
-// filters — a silent 0m readout gives nothing to debug with.
-class _GpsDiagnostics extends StatelessWidget {
-  final RunState run;
-  const _GpsDiagnostics({required this.run});
-
-  @override
-  Widget build(BuildContext context) {
-    final acc = run.gpsAccuracy;
-    final spd = run.lastSpeedMps;
-    final step = run.lastStepMeters;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: DefaultTextStyle(
-        style: const TextStyle(
-            color: Colors.white70, fontSize: 11, fontFamily: 'Menlo'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('acc ${acc == null ? '—' : '±${acc.toStringAsFixed(0)}m'}'),
-                Text('spd ${spd == null ? '—' : '${spd.toStringAsFixed(1)}m/s'}'),
-                Text('step ${step == null ? '—' : '${step.toStringAsFixed(0)}m'}'),
-                Text('${run.samplesUsed}/${run.samplesSeen} fixes'),
-              ],
-            ),
-            if (run.lastReject != null) ...[
-              const SizedBox(height: 4),
-              Text('skipped: ${run.lastReject}',
-                  style: const TextStyle(
-                      color: Colors.orangeAccent, fontSize: 11)),
-            ],
-          ],
-        ),
       ),
     );
   }

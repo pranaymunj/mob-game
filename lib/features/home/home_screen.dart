@@ -76,7 +76,7 @@ class HomeScreen extends ConsumerWidget {
                     stats: stats.value,
                     coins: ref.watch(myPlayerProvider).value?.coins ?? 0,
                   ),
-                  const Spacer(flex: 2),
+                  const Spacer(),
                   // Wordmark
                   Text(
                     AppConstants.appName.toUpperCase(),
@@ -203,26 +203,43 @@ class _PlayerHud extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          Column(
-            children: [
-              const Text('🪙', style: TextStyle(fontSize: 16)),
-              Text('$coins',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-            ],
+          const SizedBox(width: 12),
+          _HudStat(
+            icon: Icons.monetization_on,
+            color: AppColors.gold,
+            value: '$coins',
           ),
-          const SizedBox(width: 10),
-          Column(
-            children: [
-              const Text('🔥', style: TextStyle(fontSize: 16)),
-              Text('${s?.currentStreak ?? 0}',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-            ],
+          const SizedBox(width: 14),
+          _HudStat(
+            icon: Icons.local_fire_department,
+            color: const Color(0xFFFF7043),
+            value: '${s?.currentStreak ?? 0}',
           ),
         ],
       ),
+    );
+  }
+}
+
+// A compact icon + value pair for the top HUD (coins, streak).
+class _HudStat extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String value;
+  const _HudStat(
+      {required this.icon, required this.color, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 4),
+        Text(value,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+      ],
     );
   }
 }
@@ -241,7 +258,7 @@ class _MissionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accent.withValues(alpha: 0.7), width: 1.5),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

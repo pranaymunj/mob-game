@@ -3,6 +3,9 @@
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme.dart';
+import '../../core/ui_kit.dart';
+
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
 
@@ -91,21 +94,22 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
+      child: GamePanel(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Icon(icon, size: 20),
+              Icon(icon, size: 20, color: AppColors.accent),
               const SizedBox(width: 8),
               Text(title,
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
+                      fontWeight: FontWeight.w800, fontSize: 16)),
             ]),
             const SizedBox(height: 8),
-            Text(body),
+            Text(body,
+                style: const TextStyle(color: AppColors.muted, height: 1.35)),
           ],
         ),
       ),
@@ -120,11 +124,27 @@ class _FaqTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ExpansionTile(
-        title: Text(q, style: const TextStyle(fontWeight: FontWeight.w600)),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: [Align(alignment: Alignment.centerLeft, child: Text(a))],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
+      child: GamePanel(
+        padding: EdgeInsets.zero,
+        child: Theme(
+          // Hide the default divider lines for a cleaner expansion tile.
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            shape: const Border(),
+            title: Text(q,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            childrenPadding:
+                const EdgeInsets.fromLTRB(AppSpace.lg, 0, AppSpace.lg, AppSpace.lg),
+            children: [
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(a,
+                      style: const TextStyle(color: AppColors.muted))),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -135,25 +155,24 @@ class _Contact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Row(children: [
-              Icon(Icons.support_agent, size: 20),
-              SizedBox(width: 8),
-              Text('Contact support',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            ]),
-            SizedBox(height: 8),
-            Text('Need help or found a bug? Email us:'),
-            SizedBox(height: 4),
-            SelectableText('support@claimr.app',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-          ],
-        ),
+    return GamePanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Row(children: [
+            Icon(Icons.support_agent, size: 20, color: AppColors.accent),
+            SizedBox(width: 8),
+            Text('Contact support',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          ]),
+          SizedBox(height: 8),
+          Text('Need help or found a bug? Email us:',
+              style: TextStyle(color: AppColors.muted)),
+          SizedBox(height: 4),
+          SelectableText('support@claimr.app',
+              style: TextStyle(
+                  fontWeight: FontWeight.w700, color: AppColors.accent)),
+        ],
       ),
     );
   }
