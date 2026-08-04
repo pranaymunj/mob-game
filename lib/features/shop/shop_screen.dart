@@ -11,6 +11,7 @@ import '../../core/theme.dart';
 import '../../core/ui_kit.dart';
 import '../perks/perk_info.dart';
 import '../profile/profile_screen.dart';
+import 'cosmetic_preview.dart';
 import 'cosmetics_catalog.dart';
 
 // Display prices — must match buy_perk() in 0017_currency.sql.
@@ -184,7 +185,8 @@ class _BalanceBanner extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: AppColors.goldGradient,
               ),
-              child: const Text('🪙', style: TextStyle(fontSize: 22)),
+              child: const Icon(Icons.monetization_on,
+                  color: Color(0xFF7A5200), size: 26),
             ),
             const SizedBox(width: AppSpace.md),
             Column(
@@ -241,19 +243,8 @@ class _CosmeticTile extends StatelessWidget {
         padding: const EdgeInsets.all(AppSpace.md),
         child: Row(
           children: [
-            // Glowing colour swatch previewing the skin.
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: info.color,
-                borderRadius: BorderRadius.circular(AppSpace.radiusSm),
-                boxShadow: [
-                  BoxShadow(
-                      color: info.color.withValues(alpha: 0.7), blurRadius: 16),
-                ],
-              ),
-            ),
+            // Live, physics-driven preview of what the skin actually looks like.
+            CosmeticPreview(info: info, size: 54),
             const SizedBox(width: AppSpace.md),
             Expanded(
               child: Column(
