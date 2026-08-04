@@ -14,6 +14,7 @@ import 'map_service.dart';
 
 class MapboxMapService implements MapService {
   MapboxMap? _map;
+  PolylineAnnotationManager? _trailGlowManager; // soft wide glow under the trail
   PolylineAnnotationManager? _trailManager;
   PolylineAnnotationManager? _ghostManager; // your best route (ghost run)
   PolygonAnnotationManager? _zoneManager; // Neighborhood Wars zone control
@@ -42,7 +43,14 @@ class MapboxMapService implements MapService {
     _previewManager = await map.annotations.createPolylineAnnotationManager();
     _claimManager = await map.annotations.createPolygonAnnotationManager();
     _ghostManager = await map.annotations.createPolylineAnnotationManager();
+    // Glow layer is created BEFORE the trail so it renders underneath it,
+    // giving the bright core a soft neon halo.
+    _trailGlowManager = await map.annotations.createPolylineAnnotationManager();
     _trailManager = await map.annotations.createPolylineAnnotationManager();
+    // Rounded caps + joins make the trail read as a smooth painted stroke
+    // rather than a jagged chain of segments.
+    await _trailGlowManager!.setLineCap(LineCap.ROUND);
+    await _trailManager!.setLineCap(LineCap.ROUND);
     _ghostMarkerManager = await map.annotations.createPointAnnotationManager();
     _pickupManager = await map.annotations.createPointAnnotationManager();
     _flagManager = await map.annotations.createPointAnnotationManager();
@@ -174,21 +182,35 @@ class MapboxMapService implements MapService {
   @override
   Future<void> drawTrail(List<List<double>> points) async {
     final manager = _trailManager;
+    final glow = _trailGlowManager;
     if (manager == null) return;
 
     // Redraw the whole trail each update. Cheap because updates are batched
     // (~every few meters), so the point count stays modest during a run.
     await manager.deleteAll();
+    await glow?.deleteAll();
     if (points.length < 2) return;
 
-    final line = LineString(
-      coordinates: points.map((p) => Position(p[0], p[1])).toList(),
+    final coords = points.map((p) => Position(p[0], p[1])).toList();
+    final line = LineString(coordinates: coords);
+
+    // Neon look: a wide, soft, translucent halo underneath...
+    await glow?.create(
+      PolylineAnnotationOptions(
+        geometry: LineString(coordinates: coords),
+        lineColor: _playerColor,
+        lineWidth: 18.0,
+        lineBlur: 12.0,
+        lineOpacity: 0.35,
+      ),
     );
+    // ...then a bright, crisp core stroke on top.
     await manager.create(
       PolylineAnnotationOptions(
         geometry: line,
         lineColor: _playerColor,
-        lineWidth: 5.0,
+        lineWidth: 6.0,
+        lineOpacity: 0.95,
       ),
     );
   }

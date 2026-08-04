@@ -128,11 +128,19 @@ class _CaptureCelebrationState extends State<CaptureCelebration>
                             color: Colors.black54,
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text('🪙 +${(widget.coins * countUp).round()}',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.monetization_on,
+                                  color: AppColors.gold, size: 22),
+                              const SizedBox(width: 6),
+                              Text('+${(widget.coins * countUp).round()}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
                         ),
                     ],
                   ),

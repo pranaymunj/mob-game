@@ -101,7 +101,9 @@ class AppTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: AppColors.background,
       colorScheme: scheme,
-      fontFamily: null,
+      // One typeface everywhere — the fastest single lever for "this is a game"
+      // rather than "this is a stock Material app".
+      fontFamily: 'Baloo2',
     );
 
     return base.copyWith(

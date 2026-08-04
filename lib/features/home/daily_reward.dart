@@ -42,7 +42,7 @@ class _DailyRewardCardState extends ConsumerState<DailyRewardCard> {
       ref.invalidate(perksProvider);
       final perkPart = r.perk == null ? '' : ' + ${perkName(r.perk!)}!';
       messenger.showSnackBar(SnackBar(
-        content: Text('Day ${r.day} reward: 🪙 ${r.coins}$perkPart'),
+        content: Text('Day ${r.day} reward: +${r.coins} coins$perkPart'),
       ));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('$e')));

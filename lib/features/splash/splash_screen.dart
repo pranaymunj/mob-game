@@ -99,15 +99,24 @@ class _SplashScreenState extends State<SplashScreen>
                   child: Column(
                     children: [
                       Text(
-                        AppConstants.appName,
+                        AppConstants.appName.toUpperCase(),
                         style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.onSurface,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 3,
+                              color: Colors.white,
+                              shadows: [
+                                Shadow(
+                                    color: AppColors.accent
+                                        .withValues(alpha: 0.6),
+                                    blurRadius: 22),
+                              ],
                             ),
                       ),
                       const SizedBox(height: 4),
-                      const Text('Claim the streets.',
-                          style: TextStyle(color: Colors.grey)),
+                      Text('Claim the streets.',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              letterSpacing: 1.5)),
                     ],
                   ),
                 ),

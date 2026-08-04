@@ -3,6 +3,7 @@
 // Loop capture arrives in Phase 3.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,7 +33,14 @@ class RunScreen extends ConsumerStatefulWidget {
   ConsumerState<RunScreen> createState() => _RunScreenState();
 }
 
-class _RunScreenState extends ConsumerState<RunScreen> {
+class _RunScreenState extends ConsumerState<RunScreen>
+    with TickerProviderStateMixin {
+  // A short, decaying shake of the whole screen when turf is claimed — the
+  // physical "impact" that makes the capture feel like it hit.
+  late final AnimationController _shake = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 450),
+  );
   bool _mapReady = false;
   double? _lng, _lat;
   RealtimeChannel? _turfChannel;
@@ -208,6 +216,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
 
   @override
   void dispose() {
+    _shake.dispose();
     _ticker?.cancel();
     _ghostTimer?.cancel();
     _turfChannel?.unsubscribe();
@@ -285,6 +294,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
         // Layered feedback: haptic thump + click, timed with the animation.
         if (settings.haptics) HapticFeedback.heavyImpact();
         if (settings.sound) SystemSound.play(SystemSoundType.click);
+        _shake.forward(from: 0); // kick the screen-shake impact
         // Now that they've felt the payoff, it's a fair moment to ask about
         // streak reminders (asking at app launch tanks opt-in).
         _offerRemindersOnce();
@@ -347,7 +357,15 @@ class _RunScreenState extends ConsumerState<RunScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Run')),
-      body: Stack(
+      body: AnimatedBuilder(
+        animation: _shake,
+        builder: (context, child) {
+          // Decaying horizontal jitter: strong at the start, gone by the end.
+          final t = _shake.value;
+          final dx = t == 0 ? 0.0 : math.sin(t * math.pi * 7) * (1 - t) * 9;
+          return Transform.translate(offset: Offset(dx, 0), child: child);
+        },
+        child: Stack(
         children: [
           MapWidget(
             key: const ValueKey('runMap'),
@@ -404,6 +422,7 @@ class _RunScreenState extends ConsumerState<RunScreen> {
           // The capture payoff — drawn above everything while it plays.
           if (_celebration != null) Positioned.fill(child: _celebration!),
         ],
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: Padding(
