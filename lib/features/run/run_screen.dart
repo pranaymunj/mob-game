@@ -305,6 +305,19 @@ class _RunScreenState extends ConsumerState<RunScreen> {
           ));
       }
 
+      // Loop closed but the enclosed area was too small to bank. Tell the
+      // player why in plain words so it never feels like a silent failure.
+      if (next.smallLoopCount > (prev?.smallLoopCount ?? 0)) {
+        if (settings.haptics) HapticFeedback.vibrate();
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+            content: Text('Loop too small to claim — walk a bigger block '
+                '(about 30 m across).'),
+            duration: Duration(seconds: 4),
+          ));
+      }
+
       // Auto-paused at vehicle speed.
       if (next.autoPausedForSpeed && !(prev?.autoPausedForSpeed ?? false)) {
         if (settings.haptics) HapticFeedback.heavyImpact();

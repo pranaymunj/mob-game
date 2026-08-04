@@ -224,8 +224,19 @@ class RunController extends Notifier<RunState> {
 
     final area = geometry.areaSqMeters(ring);
     if (area < AppConstants.minClaimAreaM2) {
+      // The trail closed a loop, but the enclosed area is below the minimum.
+      // Count it so the UI can explain "loop too small" instead of the trail
+      // silently vanishing — the classic "I closed it and nothing happened".
+      AnalyticsService.log('capture_rejected', {
+        'reason': 'too_small',
+        'area_m2': area.round(),
+      });
       state = state.copyWith(
-          trail: [closingPoint], previewGapMeters: null, previewAreaM: 0);
+        trail: [closingPoint],
+        previewGapMeters: null,
+        previewAreaM: 0,
+        smallLoopCount: state.smallLoopCount + 1,
+      );
       return;
     }
 

@@ -11,6 +11,7 @@ class RunState {
   final double lastClaimArea; // sq meters of the most recent claim (for UI)
   final bool autoPausedForSpeed; // set true when we auto-pause at car speed
   final int rejectedCount; // captures rejected client-side for over-cap speed
+  final int smallLoopCount; // loops closed but discarded for being too small
   final double? gpsAccuracy; // last fix's accuracy in metres (null = no fix yet)
 
   // Live GPS diagnostics — so a run that isn't counting can explain itself
@@ -40,6 +41,7 @@ class RunState {
     this.lastClaimArea = 0,
     this.autoPausedForSpeed = false,
     this.rejectedCount = 0,
+    this.smallLoopCount = 0,
     this.gpsAccuracy,
     this.lastSpeedMps,
     this.lastStepMeters,
@@ -76,6 +78,7 @@ class RunState {
     double? lastClaimArea,
     bool? autoPausedForSpeed,
     int? rejectedCount,
+    int? smallLoopCount,
     double? gpsAccuracy,
     double? lastSpeedMps,
     double? lastStepMeters,
@@ -94,6 +97,7 @@ class RunState {
         lastClaimArea: lastClaimArea ?? this.lastClaimArea,
         autoPausedForSpeed: autoPausedForSpeed ?? this.autoPausedForSpeed,
         rejectedCount: rejectedCount ?? this.rejectedCount,
+        smallLoopCount: smallLoopCount ?? this.smallLoopCount,
         gpsAccuracy: gpsAccuracy ?? this.gpsAccuracy,
         lastSpeedMps: lastSpeedMps ?? this.lastSpeedMps,
         lastStepMeters: lastStepMeters ?? this.lastStepMeters,
