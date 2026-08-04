@@ -68,32 +68,32 @@ const trailCatalog = <CosmeticInfo>[
 const turfCatalog = <CosmeticInfo>[
   CosmeticInfo(
       key: 'turf_solid',
-      name: 'Solid',
+      name: 'Solid Fill',
       price: 0,
       slot: CosmeticSlot.turf,
       color: Color(0xFF56B4E9),
-      blurb: 'A clean colour fill.'),
+      blurb: 'A clean, filled territory.'),
   CosmeticInfo(
       key: 'turf_outline',
-      name: 'Outline',
+      name: 'Bordered',
       price: 250,
       slot: CosmeticSlot.turf,
       color: Color(0xFFE69F00),
-      blurb: 'Bold border, light fill.'),
+      blurb: 'A bold outline around your land.'),
   CosmeticInfo(
       key: 'turf_glow',
-      name: 'Glow',
+      name: 'Glowing',
       price: 400,
       slot: CosmeticSlot.turf,
       color: Color(0xFF009E73),
-      blurb: 'A radiant, brighter fill.'),
+      blurb: 'Your land radiates a bright glow.'),
   CosmeticInfo(
       key: 'turf_hatch',
-      name: 'Hatch',
+      name: 'Striped',
       price: 500,
       slot: CosmeticSlot.turf,
       color: Color(0xFFCC79A7),
-      blurb: 'Densely marked territory.'),
+      blurb: 'Striped, clearly-marked territory.'),
 ];
 
 final _byKey = {

@@ -29,6 +29,9 @@ class _Spec {
   final List<Color> palette; // particles pick from these
   final int count;
   const _Spec(this.motion, this.bg, this.palette, this.count);
+
+  // Turf styles use a land-plot look instead of a particle field.
+  bool get isTurf => bg != _Bg.none;
 }
 
 // Per-cosmetic emitter tuning. Colours lean into each skin's identity.
@@ -52,14 +55,16 @@ _Spec _specFor(CosmeticInfo info) {
       ], 14);
     case 'trail_classic':
       return _Spec(_Motion.drift, _Bg.none, [info.color, Colors.white], 10);
+    // Turf styles render as land plots (see _TurfPlotPainter), so they emit
+    // no particles — the plot + flag carry the look.
     case 'turf_solid':
-      return _Spec(_Motion.drift, _Bg.solid, [info.color], 6);
+      return _Spec(_Motion.drift, _Bg.solid, [info.color], 0);
     case 'turf_outline':
-      return _Spec(_Motion.drift, _Bg.outline, [info.color], 6);
+      return _Spec(_Motion.drift, _Bg.outline, [info.color], 0);
     case 'turf_glow':
-      return _Spec(_Motion.rise, _Bg.glow, [info.color, Colors.white], 10);
+      return _Spec(_Motion.drift, _Bg.glow, [info.color], 0);
     case 'turf_hatch':
-      return _Spec(_Motion.drift, _Bg.hatch, [info.color], 6);
+      return _Spec(_Motion.drift, _Bg.hatch, [info.color], 0);
     default:
       return _Spec(_Motion.drift, _Bg.none, [info.color], 10);
   }
@@ -293,7 +298,12 @@ class _PreviewPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size,
         Paint()..color = const Color(0xFF10131A));
 
-    _paintBackground(canvas, size);
+    // Turf styles render as a claimed land plot with a flag — a clearly
+    // different identity from the flowing trail particles.
+    if (spec.isTurf) {
+      _paintTurfPlot(canvas, size);
+      return;
+    }
 
     // Particles: a soft halo + a bright core for a glowing look.
     for (final p in particles) {
@@ -334,51 +344,103 @@ class _PreviewPainter extends CustomPainter {
     }
   }
 
-  void _paintBackground(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
+  // Draw the claimed-land plot: an inset rounded patch filled per style, a
+  // border so it reads as territory, and a planted flag in the player's colour.
+  void _paintTurfPlot(Canvas canvas, Size size) {
+    final plot = RRect.fromRectAndRadius(
+        (Offset.zero & size).deflate(7), const Radius.circular(8));
+    final plotRect = plot.outerRect;
+
+    canvas.save();
+    canvas.clipRRect(plot);
     switch (spec.bg) {
       case _Bg.solid:
-        canvas.drawRect(rect, Paint()..color = baseColor.withValues(alpha: 0.5));
-        break;
-      case _Bg.outline:
-        canvas.drawRect(rect, Paint()..color = baseColor.withValues(alpha: 0.12));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect.deflate(2), const Radius.circular(6)),
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3
-            ..color = baseColor,
-        );
-        break;
-      case _Bg.glow:
-        // A breathing radial glow.
-        final pulse = 0.5 + 0.5 * math.sin(t * 2.2);
+        canvas.drawRect(plotRect, Paint()..color = baseColor.withValues(alpha: 0.55));
+        // A soft diagonal sheen sweeping across, like light over the land.
+        final sx = (t * 0.35 % 1.0) * (plotRect.width + plotRect.height) -
+            plotRect.height;
         canvas.drawRect(
-          rect,
+          plotRect,
           Paint()
-            ..shader = RadialGradient(
+            ..shader = LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              stops: const [0.0, 0.5, 1.0],
               colors: [
-                baseColor.withValues(alpha: 0.15 + 0.45 * pulse),
+                Colors.transparent,
+                Colors.white.withValues(alpha: 0.18),
                 Colors.transparent,
               ],
-            ).createShader(rect),
+            ).createShader(Rect.fromLTWH(
+                plotRect.left + sx, plotRect.top, 24, plotRect.height)),
+        );
+        break;
+      case _Bg.outline:
+        canvas.drawRect(plotRect, Paint()..color = baseColor.withValues(alpha: 0.14));
+        break;
+      case _Bg.glow:
+        final pulse = 0.5 + 0.5 * math.sin(t * 2.4);
+        canvas.drawRect(plotRect, Paint()..color = baseColor.withValues(alpha: 0.18));
+        canvas.drawRect(
+          plotRect,
+          Paint()
+            ..shader = RadialGradient(colors: [
+              baseColor.withValues(alpha: 0.25 + 0.5 * pulse),
+              Colors.transparent,
+            ]).createShader(plotRect),
         );
         break;
       case _Bg.hatch:
-        canvas.drawRect(rect, Paint()..color = baseColor.withValues(alpha: 0.14));
+        canvas.drawRect(plotRect, Paint()..color = baseColor.withValues(alpha: 0.16));
         final paint = Paint()
-          ..color = baseColor.withValues(alpha: 0.65)
-          ..strokeWidth = 2;
-        // Diagonal lines that scroll for a "marked territory" feel.
-        final offset = (t * 12) % 12;
-        for (double x = -size.height + offset; x < size.width; x += 12) {
-          canvas.drawLine(
-              Offset(x, size.height), Offset(x + size.height, 0), paint);
+          ..color = baseColor.withValues(alpha: 0.7)
+          ..strokeWidth = 3;
+        final offset = (t * 10) % 12; // scrolling stripes
+        for (double x = plotRect.left - plotRect.height + offset;
+            x < plotRect.right;
+            x += 12) {
+          canvas.drawLine(Offset(x, plotRect.bottom),
+              Offset(x + plotRect.height, plotRect.top), paint);
         }
         break;
       case _Bg.none:
         break;
     }
+    canvas.restore();
+
+    // Territory border — thicker for the "Bordered" style.
+    canvas.drawRRect(
+      plot,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = spec.bg == _Bg.outline ? 3.5 : 1.6
+        ..color = baseColor.withValues(alpha: 0.95),
+    );
+
+    _paintFlag(canvas, Offset(size.width / 2, size.height / 2 + 3));
+  }
+
+  // A small planted flag so turf clearly reads as "land you own".
+  void _paintFlag(Canvas canvas, Offset base) {
+    const poleH = 16.0;
+    final top = base - const Offset(0, poleH);
+    // Pole.
+    canvas.drawLine(
+      base,
+      top,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round,
+    );
+    // Pennant — a little wave via the flag tip following t.
+    final wave = math.sin(t * 5) * 1.5;
+    final flag = Path()
+      ..moveTo(top.dx, top.dy)
+      ..lineTo(top.dx + 11, top.dy + 3 + wave)
+      ..lineTo(top.dx, top.dy + 7)
+      ..close();
+    canvas.drawPath(flag, Paint()..color = baseColor);
   }
 
   @override
