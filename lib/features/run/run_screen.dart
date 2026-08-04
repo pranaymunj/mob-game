@@ -19,6 +19,7 @@ import '../../models/pickup.dart';
 import '../../services/geocoding_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/settings_service.dart';
+import '../../services/sound_service.dart';
 import '../perks/perk_info.dart';
 import '../shop/cosmetics_catalog.dart';
 import 'capture_celebration.dart';
@@ -173,6 +174,7 @@ class _RunScreenState extends ConsumerState<RunScreen>
     try {
       final perk = await ref.read(backendServiceProvider).collectPickup(hit.id);
       if (ref.read(settingsProvider).haptics) HapticFeedback.mediumImpact();
+      if (ref.read(settingsProvider).sound) SoundService.instance.coin();
       messenger.showSnackBar(
         SnackBar(content: Text('🎁 Picked up ${perkName(perk)}!')),
       );
@@ -276,7 +278,7 @@ class _RunScreenState extends ConsumerState<RunScreen>
           _treasuresShown = earned;
           final withPerk = _treasuresShown % AppConstants.treasurePerkEvery == 0;
           if (settings.haptics) HapticFeedback.mediumImpact();
-          if (settings.sound) SystemSound.play(SystemSoundType.click);
+          if (settings.sound) SoundService.instance.treasure();
           messenger
             ..clearSnackBars()
             ..showSnackBar(SnackBar(
@@ -293,7 +295,7 @@ class _RunScreenState extends ConsumerState<RunScreen>
       if (gainedClaim) {
         // Layered feedback: haptic thump + click, timed with the animation.
         if (settings.haptics) HapticFeedback.heavyImpact();
-        if (settings.sound) SystemSound.play(SystemSoundType.click);
+        if (settings.sound) SoundService.instance.claim();
         _shake.forward(from: 0); // kick the screen-shake impact
         // Now that they've felt the payoff, it's a fair moment to ask about
         // streak reminders (asking at app launch tanks opt-in).

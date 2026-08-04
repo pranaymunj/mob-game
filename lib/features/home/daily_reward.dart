@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/ui_kit.dart';
+import '../../services/settings_service.dart';
+import '../../services/sound_service.dart';
 import '../perks/perk_info.dart';
 import '../profile/profile_screen.dart';
 
@@ -37,6 +39,7 @@ class _DailyRewardCardState extends ConsumerState<DailyRewardCard> {
     setState(() => _busy = true);
     try {
       final r = await ref.read(backendServiceProvider).claimLoginReward();
+      if (ref.read(settingsProvider).sound) SoundService.instance.coin();
       ref.invalidate(dailyLoginProvider);
       ref.invalidate(myPlayerProvider);
       ref.invalidate(perksProvider);
