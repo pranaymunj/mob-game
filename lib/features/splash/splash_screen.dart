@@ -380,81 +380,168 @@ class _CityPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.background);
   }
 
-  // ── City geometry ───────────────────────────────────────────────────────
-  // The city is drawn as solid BLOCK MASSES with the streets left as the dark
-  // gaps between them — which is how real map renders (including Mapbox's own
-  // dark style) work. Drawing streets as bright lines over a flat background
-  // is what made the earlier version read as graph paper rather than a city.
+  // ── The city, as lights ─────────────────────────────────────────────────
+  // Your city seen from the air at night: thousands of small lights strung
+  // along streets we never draw, dense downtown and thinning to darkness at
+  // the edges. Nothing is drawn as a line or a filled rectangle — the streets
+  // exist only as the lines the lights sit on, which is what stops it reading
+  // as a diagram.
+  //
+  // The field is generated once per screen size and cached: placement is
+  // deterministic, so it's the same city on every launch, and the per-frame
+  // cost is a cull plus a draw.
 
-  // One block's footprint. Every third gap is an avenue, so it's left wider —
-  // that hierarchy comes out of the geometry instead of out of line weights.
-  Rect _blockRect(Size size, int col, int row) {
+  static Size? _fieldSize;
+  static List<_Light>? _field;
+
+  List<_Light> _lights(Size size) {
+    if (_fieldSize == size && _field != null) return _field!;
+
     final c = _cell(size);
     final a = _anchor(size);
-    final street = c * 0.09;
-    final avenue = c * 0.20;
+    final route = _routePath(size);
+    final rnd = math.Random(20260805);
+    final out = <_Light>[];
 
-    // Dart's % is non-negative for a positive divisor, so this is safe for
-    // negative coordinates.
-    double gapAt(int i) => (i % 3 == 0) ? avenue : street;
+    const reach = 13; // cells from the anchor, covers the widest framing
 
-    final l = a.dx + col * c + gapAt(col) / 2;
-    final r = a.dx + (col + 1) * c - gapAt(col + 1) / 2;
-    final t = a.dy + row * c + gapAt(row) / 2;
-    final b = a.dy + (row + 1) * c - gapAt(row + 1) / 2;
-    return Rect.fromLTRB(l, t, math.max(r, l), math.max(b, t));
-  }
-
-  // Deterministic per-block value in 0..1, so the city looks hand-varied but
-  // is identical on every launch.
-  double _blockNoise(int col, int row) {
-    var h = (col * 73856093) ^ (row * 19349663);
-    h = (h ^ (h >> 13)) * 1274126177;
-    return ((h ^ (h >> 16)) & 0xFFFF) / 0xFFFF;
-  }
-
-  // Which blocks the camera can see, as inclusive cell ranges.
-  List<int> _visibleCells(Size size, Rect view) {
-    final c = _cell(size);
-    final a = _anchor(size);
-    return [
-      ((view.left - a.dx) / c).floor() - 1,
-      ((view.right - a.dx) / c).ceil() + 1,
-      ((view.top - a.dy) / c).floor() - 1,
-      ((view.bottom - a.dy) / c).ceil() + 1,
+    // Precompute the rival regions once rather than per light.
+    final regions = [
+      for (final r in _rivals)
+        Rect.fromPoints(
+          _at(size, r[0], r[1]),
+          _at(size, r[0] + r[2], r[1] + r[3]),
+        )
     ];
+
+    // Emit a RUN of lights along one street segment. Independently scattered
+    // points read as a starfield no matter how many you draw; it's the runs
+    // that make streets appear, because the eye joins collinear dots into a
+    // line long before it counts them.
+    void run(Offset from, Offset to, double density) {
+      final count = (4 + rnd.nextInt(7) * density).round();
+      if (count < 2) return;
+      final dir = to - from;
+      final len = dir.distance;
+      if (len == 0) return;
+      final across = Offset(-dir.dy / len, dir.dx / len);
+
+      for (var i = 0; i < count; i++) {
+        // Even spacing with a little slop, so lamps sit in a line but not a
+        // perfect ruler.
+        final f = (i + 0.5 + (rnd.nextDouble() - 0.5) * 0.55) / count;
+        if (f < 0 || f > 1) continue;
+        final jitter = (rnd.nextDouble() - 0.5) * c * 0.05;
+        final p = from + dir * f + across * jitter;
+
+        final warm = rnd.nextDouble() < 0.74;
+        final colour = warm
+            ? Color.lerp(const Color(0xFFFFC27A), const Color(0xFFFFE7BE),
+                rnd.nextDouble())!
+            : Color.lerp(const Color(0xFFA8C6FF), const Color(0xFFE4EEFF),
+                rnd.nextDouble())!;
+
+        var owner = -1;
+        for (var k = 0; k < regions.length; k++) {
+          if (regions[k].contains(p)) {
+            owner = k;
+            break;
+          }
+        }
+        if (owner == -1 && route.contains(p)) owner = -2; // yours
+
+        out.add(_Light(
+          x: p.dx,
+          y: p.dy,
+          radius: c * (0.006 + rnd.nextDouble() * 0.013),
+          brightness: 0.28 + rnd.nextDouble() * 0.72,
+          phase: rnd.nextDouble() * math.pi * 2,
+          colour: colour,
+          owner: owner,
+        ));
+      }
+    }
+
+    for (var col = -reach; col <= reach; col++) {
+      for (var row = -reach; row <= reach; row++) {
+        // Downtown is dense and bright; the outskirts thin to dark. The
+        // falloff is what gives the field a centre instead of uniform static.
+        final d = math.sqrt(col * col + row * row) / reach;
+        final density = (1.0 - d * d).clamp(0.0, 1.0);
+        if (density <= 0.02) continue;
+
+        final o = Offset(a.dx + col * c, a.dy + row * c);
+        // Avenues (every third line) are lit more heavily than side streets.
+        if (rnd.nextDouble() < density * (row % 3 == 0 ? 0.95 : 0.55)) {
+          run(o, o + Offset(c, 0), density);
+        }
+        if (rnd.nextDouble() < density * (col % 3 == 0 ? 0.95 : 0.55)) {
+          run(o, o + Offset(0, c), density);
+        }
+      }
+    }
+
+    _fieldSize = size;
+    _field = out;
+    return out;
   }
 
   void _paintCity(Canvas canvas, Size size, Rect view) {
     if (gridIn <= 0) return;
-    final c = _cell(size);
-    final radius = Radius.circular(c * 0.05);
-    final v = _visibleCells(size, view);
 
-    for (var col = v[0]; col <= v[1]; col++) {
-      for (var row = v[2]; row <= v[3]; row++) {
-        final n = _blockNoise(col, row);
+    // A soft downtown haze, so the lights sit in glow rather than on flat black.
+    canvas.drawCircle(
+      _anchor(size),
+      _cell(size) * 9,
+      Paint()
+        ..color = const Color(0xFF2A3E63).withValues(alpha: 0.30 * gridIn)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, _cell(size) * 4),
+    );
 
-        // Most blocks are built-up; a few read as parks and a few as open
-        // ground, which stops the city from tiling visibly.
-        final Color base;
-        if (n > 0.94) {
-          base = const Color(0xFF16241C); // park
-        } else if (n < 0.07) {
-          base = const Color(0xFF141A26); // open ground / lot
-        } else {
-          base = Color.lerp(
-            const Color(0xFF171E2B),
-            const Color(0xFF222C40),
-            n,
-          )!;
+    final grown = view.inflate(_cell(size));
+    final dot = Paint();
+    final bloom = Paint()
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, _cell(size) * 0.07);
+
+    for (final l in _lights(size)) {
+      if (!grown.contains(Offset(l.x, l.y))) continue;
+
+      // Turf recolours the lights it stands on — the district is legible from
+      // the colour of its own windows, with no rectangle laid over the map.
+      var colour = l.colour;
+      var lit = l.brightness;
+      var owned = 0.0; // how strongly this light is claimed by someone
+
+      if (l.owner >= 0) {
+        owned = ((rivals - l.owner * 0.09) / 0.5).clamp(0.0, 1.0);
+        if (owned > 0) {
+          colour = Color.lerp(l.colour,
+              AppColors.ownershipPalette[_rivals[l.owner][4]], 0.95 * owned)!;
+          lit = l.brightness * (1 + 1.9 * owned);
         }
-
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(_blockRect(size, col, row), radius),
-          Paint()..color = base.withValues(alpha: gridIn),
-        );
+      } else if (l.owner == -2 && flood > 0) {
+        owned = flood;
+        colour = Color.lerp(l.colour, Colors.white, 0.6 * flood)!;
+        lit = l.brightness * (1 + 2.4 * flood);
       }
+
+      // Slow, shallow twinkle — enough to feel alive, not enough to sparkle.
+      final tw = 0.80 + 0.20 * math.sin(time * 5 + l.phase);
+      final alpha = (lit * tw * gridIn).clamp(0.0, 1.0);
+
+      // Claimed windows always bloom, which is what makes a district emerge
+      // from the field without any shape being drawn around it.
+      if (owned > 0.05) {
+        canvas.drawCircle(
+            Offset(l.x, l.y),
+            l.radius * (3.2 + 3.4 * owned),
+            bloom..color = colour.withValues(alpha: alpha * 0.55 * owned));
+      } else if (l.brightness > 0.80) {
+        canvas.drawCircle(Offset(l.x, l.y), l.radius * 3.4,
+            bloom..color = colour.withValues(alpha: alpha * 0.40));
+      }
+      canvas.drawCircle(Offset(l.x, l.y), l.radius,
+          dot..color = colour.withValues(alpha: alpha));
     }
   }
 
@@ -465,73 +552,14 @@ class _CityPainter extends CustomPainter {
   //
   // Each owner also gets a hatch at their own angle, so ownership never rests
   // on hue alone (CLAUDE.md Part 5, accessibility).
-  void _paintRivals(Canvas canvas, Size size) {
-    final c = _cell(size);
-    final radius = Radius.circular(c * 0.05);
-
-    for (var i = 0; i < _rivals.length; i++) {
-      final r = _rivals[i];
-      // Stagger: each district lights up a little after the one before.
-      final t = ((rivals - i * 0.09) / 0.5).clamp(0.0, 1.0);
-      if (t <= 0) continue;
-
-      final colour = AppColors.ownershipPalette[r[4]];
-      final region = Rect.fromPoints(
-        _at(size, r[0], r[1]),
-        _at(size, r[0] + r[2], r[1] + r[3]),
-      );
-
-      // Soft ground glow, so the district reads as lit rather than tinted.
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(region.inflate(c * 0.10), radius),
-        Paint()
-          ..color = colour.withValues(alpha: 0.20 * t)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.22),
-      );
-
-      // The blocks themselves, lit in the owner's colour.
-      for (var col = r[0]; col < r[0] + r[2]; col++) {
-        for (var row = r[1]; row < r[1] + r[3]; row++) {
-          final n = _blockNoise(col, row);
-          final rect = _blockRect(size, col, row);
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(rect, radius),
-            Paint()
-              ..color = Color.lerp(colour, Colors.white, 0.10 + 0.16 * n)!
-                  .withValues(alpha: (0.50 + 0.22 * n) * t),
-          );
-        }
-      }
-
-      // Per-owner hatch, clipped to the district.
-      canvas.save();
-      canvas.clipRRect(RRect.fromRectAndRadius(region, radius));
-      final angle = (r[4] % 4) * math.pi / 4;
-      final step = c * 0.20;
-      final span = region.longestSide * 1.6;
-      final hatch = Paint()
-        ..color = Colors.white.withValues(alpha: 0.13 * t)
-        ..strokeWidth = c * 0.022;
-      canvas.save();
-      canvas.translate(region.center.dx, region.center.dy);
-      canvas.rotate(angle);
-      for (var d = -span; d <= span; d += step) {
-        canvas.drawLine(Offset(d, -span), Offset(d, span), hatch);
-      }
-      canvas.restore();
-      canvas.restore();
-
-      // Crisp rim to seal the edge.
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(region, radius),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = c * 0.022
-          ..color = Color.lerp(colour, Colors.white, 0.35)!
-              .withValues(alpha: 0.75 * t),
-      );
-    }
-  }
+  // Rival turf is carried ENTIRELY by the colour of its own lights, in
+  // _paintCity — there is deliberately nothing to draw here.
+  //
+  // Every shaped overlay we tried failed the same way: a hard rectangle reads
+  // as a sticker on the map, and blurring it to hide the edge turns it into a
+  // smudge. A district made of its own glowing windows has no edge to give
+  // away, which is how it looks like a place rather than a highlight.
+  void _paintRivals(Canvas canvas, Size size) {}
 
   // Your block. Revealed by growing a circular clip out of the closure point,
   // so the colour visibly floods the territory from where you sealed it.
@@ -549,9 +577,11 @@ class _CityPainter extends CustomPainter {
           _at(size, 3, 3),
           // Blue-dominant: mixing far into the green made it read as a muddy
           // teal rather than as the player's own colour.
+          // Translucent enough that the city's own lights still burn through
+          // the claim — the block should read as lit up, not painted over.
           [
-            AppColors.accent.withValues(alpha: 0.72),
-            AppColors.accentDeep.withValues(alpha: 0.62),
+            AppColors.accent.withValues(alpha: 0.52),
+            AppColors.accentDeep.withValues(alpha: 0.44),
           ],
         ),
     );
@@ -676,4 +706,21 @@ class _CityPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CityPainter old) => true;
+}
+
+// One window/streetlight in the aerial field.
+class _Light {
+  final double x, y, radius, brightness, phase;
+  final Color colour;
+  final int owner; // -1 unclaimed, -2 yours, 0.. index into _rivals
+
+  const _Light({
+    required this.x,
+    required this.y,
+    required this.radius,
+    required this.brightness,
+    required this.phase,
+    required this.colour,
+    required this.owner,
+  });
 }
