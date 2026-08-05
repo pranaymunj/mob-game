@@ -170,9 +170,12 @@ class RunController extends Notifier<RunState> {
     if (!state.canClaimNow) return;
     final geometry = ref.read(geometryServiceProvider);
     final ring = geometry.enclosedPolygon([...state.trail], 0);
+    // Fall back to the run's own elapsed time rather than zero. The server
+    // gates on perimeter/duration and rejects a missing duration outright, so
+    // handing it 0 here would fail a perfectly good manual claim.
     final seconds = state.trail.length <= _times.length && _times.isNotEmpty
         ? DateTime.now().difference(_times.first).inMilliseconds / 1000.0
-        : 0.0;
+        : state.duration.inMilliseconds / 1000.0;
     _bankLoop(ring, durationS: seconds, closingPoint: state.trail.last);
   }
 
@@ -200,7 +203,10 @@ class RunController extends Notifier<RunState> {
     final geometry = ref.read(geometryServiceProvider);
     final antiCheat = ref.read(antiCheatServiceProvider);
     final loopMeters = geometry.perimeterMeters(ring);
-    final loopSpeed = durationS > 0 ? loopMeters / durationS : 0.0;
+    // A zero duration means we genuinely don't know how long the loop took —
+    // treat it as implausibly fast rather than as infinitely slow. Reading it
+    // as 0 m/s was the same mistake the server used to make, just locally.
+    final loopSpeed = durationS > 0 ? loopMeters / durationS : double.infinity;
 
     // Consume the loop: reset the trail either way.
     _times
@@ -289,7 +295,11 @@ class RunController extends Notifier<RunState> {
 
     // Bank the walk itself, whether or not a loop ever closed. Without this a
     // run that fails to capture records nothing and earns nothing.
-    if (ref.read(backendEnabledProvider) && state.sessionDistanceM > 0) {
+    // Needs a real elapsed time as well as real distance: the server gates on
+    // distance/duration and refuses a run with no duration to check against.
+    if (ref.read(backendEnabledProvider) &&
+        state.sessionDistanceM > 0 &&
+        state.duration.inSeconds > 0) {
       ref.read(backendServiceProvider).finishRun(
             distanceM: state.sessionDistanceM,
             durationS: state.duration.inSeconds.toDouble(),

@@ -24,4 +24,14 @@ void main() {
     expect(ac.impliesVehicle(20), isTrue); // ~72 km/h
     expect(ac.impliesVehicle(1.4), isFalse);
   });
+
+  // An unknown duration must read as implausibly FAST, not as 0 m/s. Treating
+  // "we don't know how long it took" as "it took forever" is exactly the hole
+  // that let a forged claim pass the server's gate; the client must not repeat
+  // it locally when it hands a loop to _bankLoop with no timing.
+  test('an unknown loop duration is rejected, not treated as zero speed', () {
+    expect(ac.speedWithinCap(double.infinity, RunMode.walk), isFalse);
+    expect(ac.speedWithinCap(double.infinity, RunMode.cycle), isFalse);
+    expect(ac.speedWithinCap(0, RunMode.walk), isTrue); // genuinely stationary
+  });
 }
