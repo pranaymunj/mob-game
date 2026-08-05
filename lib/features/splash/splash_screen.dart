@@ -27,6 +27,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
@@ -42,6 +43,7 @@ class _Beat {
   static const snap = [0.48, 0.56]; // loop closes — flash, sparks, shake
   static const flood = [0.51, 0.72]; // your block floods with colour
   static const shock = [0.51, 0.80]; // shockwave crosses the city
+  static const flag = [0.54, 0.70]; // flag plants on the claimed corner
   static const iconIn = [0.62, 0.76];
   static const wordIn = [0.68, 0.82];
   static const shine = [0.80, 0.94]; // light sweep across the wordmark
@@ -63,14 +65,32 @@ class _SplashScreenState extends State<SplashScreen>
 
   late final AnimationController _c;
   bool _finished = false;
+  ui.Image? _backdrop;
 
   @override
   void initState() {
     super.initState();
-    // Rolls immediately — nothing to load, nothing to await, so the first
-    // frame after launch is already the cinematic.
+    // Rolls immediately — the cinematic never waits on the photo. The opening
+    // beat is near-black anyway, so the backdrop fading in a frame or two late
+    // is invisible, and a slow decode can never delay the app opening.
     _c = AnimationController(vsync: this, duration: _duration)
       ..forward().whenComplete(_finish);
+    _loadBackdrop();
+  }
+
+  Future<void> _loadBackdrop() async {
+    try {
+      final data = await rootBundle.load('assets/images/night_city.jpg');
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      if (!mounted) {
+        frame.image.dispose();
+        return;
+      }
+      setState(() => _backdrop = frame.image);
+    } catch (_) {
+      // No photo: the cinematic still plays over the dark ground.
+    }
   }
 
   void _finish() {
@@ -122,7 +142,9 @@ class _SplashScreenState extends State<SplashScreen>
                       snap: _seg(_Beat.snap, c: Curves.linear),
                       flood: _seg(_Beat.flood, c: Curves.easeOutCubic),
                       shock: _seg(_Beat.shock, c: Curves.easeOutCubic),
+                      flag: _seg(_Beat.flag, c: Curves.easeOutBack),
                       push: _seg(_Beat.iconIn, c: Curves.easeOutCubic),
+                      backdrop: _backdrop,
                       time: _c.value,
                     ),
                   ),
@@ -266,7 +288,8 @@ class _SplashScreenState extends State<SplashScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _CityPainter extends CustomPainter {
-  final double gridIn, pull, trail, rivals, snap, flood, shock, push, time;
+  final double gridIn, pull, trail, rivals, snap, flood, shock, flag, push, time;
+  final ui.Image? backdrop;
 
   _CityPainter({
     required Listenable repaint,
@@ -277,7 +300,9 @@ class _CityPainter extends CustomPainter {
     required this.snap,
     required this.flood,
     required this.shock,
+    required this.flag,
     required this.push,
+    required this.backdrop,
     required this.time,
   }) : super(repaint: repaint);
 
@@ -286,23 +311,6 @@ class _CityPainter extends CustomPainter {
   static const List<List<int>> _route = [
     [-2, 2], [-2, -1], [0, -1], [0, -3], [2, -3],
     [3, -2], [3, 0], [1, 0], [1, 2], [-2, 2], // closes
-  ];
-
-  // Rival turf: [col, row, widthCells, heightCells, paletteIndex]. Placed
-  // outside your block so the reveal shows a contested city, not a collision.
-  // Kept inside the resting camera's field (roughly cols -4..5, rows -10..9)
-  // and clear of your own block (cols -2..3, rows -3..2) — turf you can see is
-  // the whole point of drawing it.
-  // Rows chosen so nothing is sliced by the top edge or hidden behind the
-  // lockup band at the bottom; columns keep clear of the block (cols -2..3)
-  // while sitting flush against it, the way real adjacent plots would.
-  static const List<List<int>> _rivals = [
-    [-4, -7, 2, 2, 0],
-    [2, -7, 2, 2, 2],
-    [-4, -1, 2, 3, 5],
-    [4, -1, 2, 3, 1],
-    [-4, 5, 2, 2, 3],
-    [2, 5, 2, 3, 6],
   ];
 
   // Block size sets the final framing: at rest the camera shows about ±5.5
@@ -370,6 +378,7 @@ class _CityPainter extends CustomPainter {
     if (trail > 0) _paintTrail(canvas, metric);
     if (snap > 0) _paintSnap(canvas, size, start);
     if (shock > 0) _paintShockwave(canvas, size, start);
+    if (flag > 0) _paintFlag(canvas, size, start);
 
     canvas.restore();
 
@@ -380,185 +389,51 @@ class _CityPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.background);
   }
 
-  // ── The city, as lights ─────────────────────────────────────────────────
-  // Your city seen from the air at night: thousands of small lights strung
-  // along streets we never draw, dense downtown and thinning to darkness at
-  // the edges. Nothing is drawn as a line or a filled rectangle — the streets
-  // exist only as the lines the lights sit on, which is what stops it reading
-  // as a diagram.
+  // ── Backdrop ────────────────────────────────────────────────────────────
+  // A real aerial photograph of a city at night (see assets/images/CREDITS.md)
+  // rather than anything procedural.
   //
-  // The field is generated once per screen size and cached: placement is
-  // deterministic, so it's the same city on every launch, and the per-frame
-  // cost is a cull plus a draw.
-
-  static Size? _fieldSize;
-  static List<_Light>? _field;
-
-  List<_Light> _lights(Size size) {
-    if (_fieldSize == size && _field != null) return _field!;
-
-    final c = _cell(size);
-    final a = _anchor(size);
-    final route = _routePath(size);
-    final rnd = math.Random(20260805);
-    final out = <_Light>[];
-
-    const reach = 13; // cells from the anchor, covers the widest framing
-
-    // Precompute the rival regions once rather than per light.
-    final regions = [
-      for (final r in _rivals)
-        Rect.fromPoints(
-          _at(size, r[0], r[1]),
-          _at(size, r[0] + r[2], r[1] + r[3]),
-        )
-    ];
-
-    // Emit a RUN of lights along one street segment. Independently scattered
-    // points read as a starfield no matter how many you draw; it's the runs
-    // that make streets appear, because the eye joins collinear dots into a
-    // line long before it counts them.
-    void run(Offset from, Offset to, double density) {
-      final count = (4 + rnd.nextInt(7) * density).round();
-      if (count < 2) return;
-      final dir = to - from;
-      final len = dir.distance;
-      if (len == 0) return;
-      final across = Offset(-dir.dy / len, dir.dx / len);
-
-      for (var i = 0; i < count; i++) {
-        // Even spacing with a little slop, so lamps sit in a line but not a
-        // perfect ruler.
-        final f = (i + 0.5 + (rnd.nextDouble() - 0.5) * 0.55) / count;
-        if (f < 0 || f > 1) continue;
-        final jitter = (rnd.nextDouble() - 0.5) * c * 0.05;
-        final p = from + dir * f + across * jitter;
-
-        final warm = rnd.nextDouble() < 0.74;
-        final colour = warm
-            ? Color.lerp(const Color(0xFFFFC27A), const Color(0xFFFFE7BE),
-                rnd.nextDouble())!
-            : Color.lerp(const Color(0xFFA8C6FF), const Color(0xFFE4EEFF),
-                rnd.nextDouble())!;
-
-        var owner = -1;
-        for (var k = 0; k < regions.length; k++) {
-          if (regions[k].contains(p)) {
-            owner = k;
-            break;
-          }
-        }
-        if (owner == -1 && route.contains(p)) owner = -2; // yours
-
-        out.add(_Light(
-          x: p.dx,
-          y: p.dy,
-          radius: c * (0.006 + rnd.nextDouble() * 0.013),
-          brightness: 0.28 + rnd.nextDouble() * 0.72,
-          phase: rnd.nextDouble() * math.pi * 2,
-          colour: colour,
-          owner: owner,
-        ));
-      }
-    }
-
-    for (var col = -reach; col <= reach; col++) {
-      for (var row = -reach; row <= reach; row++) {
-        // Downtown is dense and bright; the outskirts thin to dark. The
-        // falloff is what gives the field a centre instead of uniform static.
-        final d = math.sqrt(col * col + row * row) / reach;
-        final density = (1.0 - d * d).clamp(0.0, 1.0);
-        if (density <= 0.02) continue;
-
-        final o = Offset(a.dx + col * c, a.dy + row * c);
-        // Avenues (every third line) are lit more heavily than side streets.
-        if (rnd.nextDouble() < density * (row % 3 == 0 ? 0.95 : 0.55)) {
-          run(o, o + Offset(c, 0), density);
-        }
-        if (rnd.nextDouble() < density * (col % 3 == 0 ? 0.95 : 0.55)) {
-          run(o, o + Offset(0, c), density);
-        }
-      }
-    }
-
-    _fieldSize = size;
-    _field = out;
-    return out;
-  }
-
+  // It is deliberately pushed well back — darkened, desaturated and dimmed —
+  // because a photograph's streets do not line up with our route, and a bright
+  // one would advertise that mismatch. Held down like this it works as
+  // atmosphere, and the trail reads as an overlay drawn on top of the city
+  // rather than as a path pretending to follow those particular roads.
   void _paintCity(Canvas canvas, Size size, Rect view) {
-    if (gridIn <= 0) return;
+    if (backdrop == null || gridIn <= 0) return;
 
-    // A soft downtown haze, so the lights sit in glow rather than on flat black.
-    canvas.drawCircle(
-      _anchor(size),
-      _cell(size) * 9,
-      Paint()
-        ..color = const Color(0xFF2A3E63).withValues(alpha: 0.30 * gridIn)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, _cell(size) * 4),
+    final img = backdrop!;
+    final src =
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+
+    // Cover the world generously, so the widest camera framing still lands on
+    // photograph rather than running off its edge.
+    final dst = Rect.fromCenter(
+      center: _anchor(size),
+      width: size.width * 2.6,
+      height: size.height * 2.6,
     );
 
-    final grown = view.inflate(_cell(size));
-    final dot = Paint();
-    final bloom = Paint()
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, _cell(size) * 0.07);
-
-    for (final l in _lights(size)) {
-      if (!grown.contains(Offset(l.x, l.y))) continue;
-
-      // Turf recolours the lights it stands on — the district is legible from
-      // the colour of its own windows, with no rectangle laid over the map.
-      var colour = l.colour;
-      var lit = l.brightness;
-      var owned = 0.0; // how strongly this light is claimed by someone
-
-      if (l.owner >= 0) {
-        owned = ((rivals - l.owner * 0.09) / 0.5).clamp(0.0, 1.0);
-        if (owned > 0) {
-          colour = Color.lerp(l.colour,
-              AppColors.ownershipPalette[_rivals[l.owner][4]], 0.95 * owned)!;
-          lit = l.brightness * (1 + 1.9 * owned);
-        }
-      } else if (l.owner == -2 && flood > 0) {
-        owned = flood;
-        colour = Color.lerp(l.colour, Colors.white, 0.6 * flood)!;
-        lit = l.brightness * (1 + 2.4 * flood);
-      }
-
-      // Slow, shallow twinkle — enough to feel alive, not enough to sparkle.
-      final tw = 0.80 + 0.20 * math.sin(time * 5 + l.phase);
-      final alpha = (lit * tw * gridIn).clamp(0.0, 1.0);
-
-      // Claimed windows always bloom, which is what makes a district emerge
-      // from the field without any shape being drawn around it.
-      if (owned > 0.05) {
-        canvas.drawCircle(
-            Offset(l.x, l.y),
-            l.radius * (3.2 + 3.4 * owned),
-            bloom..color = colour.withValues(alpha: alpha * 0.55 * owned));
-      } else if (l.brightness > 0.80) {
-        canvas.drawCircle(Offset(l.x, l.y), l.radius * 3.4,
-            bloom..color = colour.withValues(alpha: alpha * 0.40));
-      }
-      canvas.drawCircle(Offset(l.x, l.y), l.radius,
-          dot..color = colour.withValues(alpha: alpha));
-    }
+    canvas.saveLayer(dst, Paint());
+    canvas.drawImageRect(
+      img,
+      src,
+      dst,
+      Paint()
+        ..filterQuality = FilterQuality.medium
+        ..color = Colors.white.withValues(alpha: 0.34 * gridIn),
+    );
+    // Cool the photo toward the app's palette so it does not read as a stock
+    // picture bolted onto a blue-and-green game.
+    canvas.drawRect(
+      dst,
+      Paint()
+        ..blendMode = BlendMode.color
+        ..color = const Color(0xFF2E4B7A),
+    );
+    canvas.restore();
   }
 
-  // Rival turf. Drawn as the city's own blocks lit up in the owner's colour —
-  // not as translucent rectangles laid over the map. Flat rectangles at low
-  // alpha over a near-black ground turn muddy (olive, brown, maroon), which is
-  // exactly how the earlier version failed.
-  //
-  // Each owner also gets a hatch at their own angle, so ownership never rests
-  // on hue alone (CLAUDE.md Part 5, accessibility).
-  // Rival turf is carried ENTIRELY by the colour of its own lights, in
-  // _paintCity — there is deliberately nothing to draw here.
-  //
-  // Every shaped overlay we tried failed the same way: a hard rectangle reads
-  // as a sticker on the map, and blurring it to hide the edge turns it into a
-  // smudge. A district made of its own glowing windows has no edge to give
-  // away, which is how it looks like a place rather than a highlight.
+  // Rival turf is no longer drawn — the photograph carries the city on its own.
   void _paintRivals(Canvas canvas, Size size) {}
 
   // Your block. Revealed by growing a circular clip out of the closure point,
@@ -667,6 +542,101 @@ class _CityPainter extends CustomPainter {
     }
   }
 
+  // The flag planted on the corner where the loop was sealed — the beat that
+  // turns "a shape filled in" into "this ground is mine". It drives itself
+  // into the block: the pole drops in from above, overshoots, and the cloth
+  // unfurls a moment behind it.
+  void _paintFlag(Canvas canvas, Size size, Offset foot) {
+    final c = _cell(size);
+    final poleH = c * 1.75;
+
+    // Plant just inside the corner rather than exactly on it, so the flag
+    // stands in the claimed ground instead of straddling its edge.
+    final at = foot + Offset(c * 0.42, -c * 0.28);
+
+    // easeOutBack on the beat already overshoots, so the pole lands with a
+    // little punch instead of gliding to a stop.
+    final drive = flag.clamp(0.0, 1.2);
+    final baseY = at.dy;
+    final topY = baseY - poleH * drive;
+
+    // Shadow pooled at the foot, so it reads as standing ON the ground.
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(at.dx, baseY), width: c * 0.52, height: c * 0.15),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.55 * flag.clamp(0.0, 1.0))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.05),
+    );
+
+    // Pole, dark-cored then bright, so it stays legible whether it falls on
+    // the bright claim fill or on the dark city behind it.
+    canvas.drawLine(
+      Offset(at.dx, baseY),
+      Offset(at.dx, topY),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.55)
+        ..strokeWidth = c * 0.085
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawLine(
+      Offset(at.dx, baseY),
+      Offset(at.dx, topY),
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = c * 0.045
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Cloth: unfurls after the pole is in, with a slow wave so it looks like
+    // fabric rather than a triangle stuck to a stick.
+    final unfurl = ((flag - 0.35) / 0.65).clamp(0.0, 1.0);
+    if (unfurl > 0) {
+      final w = c * 1.00 * unfurl;
+      final h = c * 0.62;
+      final wave = math.sin(time * 7) * c * 0.05 * unfurl;
+
+      final cloth = Path()
+        ..moveTo(at.dx, topY)
+        ..quadraticBezierTo(
+            at.dx + w * 0.55, topY - h * 0.18 + wave, at.dx + w, topY + wave)
+        ..quadraticBezierTo(at.dx + w * 0.55, topY + h * 0.42 - wave,
+            at.dx, topY + h * 0.62)
+        ..close();
+
+      canvas.drawPath(
+        cloth,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(at.dx, topY),
+            Offset(at.dx + w, topY + h),
+            [AppColors.go, AppColors.goDeep],
+          ),
+      );
+      canvas.drawPath(
+        cloth,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = c * 0.028
+          ..color = Colors.white.withValues(alpha: 0.85),
+      );
+    }
+
+    // Finial glint at the top of the pole.
+    canvas.drawCircle(
+      Offset(at.dx, topY),
+      c * 0.14,
+      Paint()
+        ..color = AppColors.go.withValues(alpha: 0.7 * flag.clamp(0.0, 1.0))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.12),
+    );
+    canvas.drawCircle(
+      Offset(at.dx, topY),
+      c * 0.055,
+      Paint()..color = Colors.white,
+    );
+  }
+
   void _paintShockwave(Canvas canvas, Size size, Offset from) {
     final fade = 1 - shock;
     canvas.drawCircle(
@@ -708,19 +678,3 @@ class _CityPainter extends CustomPainter {
   bool shouldRepaint(covariant _CityPainter old) => true;
 }
 
-// One window/streetlight in the aerial field.
-class _Light {
-  final double x, y, radius, brightness, phase;
-  final Color colour;
-  final int owner; // -1 unclaimed, -2 yours, 0.. index into _rivals
-
-  const _Light({
-    required this.x,
-    required this.y,
-    required this.radius,
-    required this.brightness,
-    required this.phase,
-    required this.colour,
-    required this.owner,
-  });
-}

@@ -76,6 +76,7 @@ flutter:
     - .env
     - assets/app_icon.png
     - assets/sfx/
+    - assets/images/
 
   # Baloo 2 — a bold, rounded, game-friendly typeface used app-wide to give
   # Claimr a single cohesive identity instead of the stock system font. It's a
