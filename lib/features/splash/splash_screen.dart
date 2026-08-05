@@ -354,9 +354,17 @@ class _CityPainter extends CustomPainter {
     canvas.scale(cam);
     canvas.translate(-focus.dx, -focus.dy);
 
-    // World is drawn in a margin wide enough that the retreating camera never
-    // runs out of city to show.
-    _paintStreets(canvas, size);
+    // Only build the blocks the camera can actually see — at the widest
+    // framing that is a few hundred, but drawing the whole lattice every
+    // frame would be thousands.
+    final view = Rect.fromLTRB(
+      focus.dx - centre.dx / cam,
+      focus.dy - centre.dy / cam,
+      focus.dx + centre.dx / cam,
+      focus.dy + centre.dy / cam,
+    );
+
+    _paintCity(canvas, size, view);
     if (rivals > 0) _paintRivals(canvas, size);
     if (flood > 0) _paintClaim(canvas, size, path, start);
     if (trail > 0) _paintTrail(canvas, metric);
@@ -372,58 +380,155 @@ class _CityPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.background);
   }
 
-  // Two-tier street network: avenues every third block read heavier than the
-  // minor streets between them. A single uniform lattice looks like graph
-  // paper; the tiering is what makes it read as a city.
-  void _paintStreets(Canvas canvas, Size size) {
-    if (gridIn <= 0) return;
+  // ── City geometry ───────────────────────────────────────────────────────
+  // The city is drawn as solid BLOCK MASSES with the streets left as the dark
+  // gaps between them — which is how real map renders (including Mapbox's own
+  // dark style) work. Drawing streets as bright lines over a flat background
+  // is what made the earlier version read as graph paper rather than a city.
+
+  // One block's footprint. Every third gap is an avenue, so it's left wider —
+  // that hierarchy comes out of the geometry instead of out of line weights.
+  Rect _blockRect(Size size, int col, int row) {
     final c = _cell(size);
     final a = _anchor(size);
+    final street = c * 0.09;
+    final avenue = c * 0.20;
 
-    final street = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.10 * gridIn)
-      ..strokeWidth = 1.0 / 1.5;
-    final avenue = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.22 * gridIn)
-      ..strokeWidth = 2.5 / 1.5;
+    // Dart's % is non-negative for a positive divisor, so this is safe for
+    // negative coordinates.
+    double gapAt(int i) => (i % 3 == 0) ? avenue : street;
 
-    // Range covers the widest camera framing with room to spare.
-    const k = 26;
-    final far = c * k;
-    for (var i = -k; i <= k; i++) {
-      final p = i % 3 == 0 ? avenue : street;
-      canvas.drawLine(
-          Offset(a.dx + i * c, a.dy - far), Offset(a.dx + i * c, a.dy + far), p);
-      canvas.drawLine(
-          Offset(a.dx - far, a.dy + i * c), Offset(a.dx + far, a.dy + i * c), p);
+    final l = a.dx + col * c + gapAt(col) / 2;
+    final r = a.dx + (col + 1) * c - gapAt(col + 1) / 2;
+    final t = a.dy + row * c + gapAt(row) / 2;
+    final b = a.dy + (row + 1) * c - gapAt(row + 1) / 2;
+    return Rect.fromLTRB(l, t, math.max(r, l), math.max(b, t));
+  }
+
+  // Deterministic per-block value in 0..1, so the city looks hand-varied but
+  // is identical on every launch.
+  double _blockNoise(int col, int row) {
+    var h = (col * 73856093) ^ (row * 19349663);
+    h = (h ^ (h >> 13)) * 1274126177;
+    return ((h ^ (h >> 16)) & 0xFFFF) / 0xFFFF;
+  }
+
+  // Which blocks the camera can see, as inclusive cell ranges.
+  List<int> _visibleCells(Size size, Rect view) {
+    final c = _cell(size);
+    final a = _anchor(size);
+    return [
+      ((view.left - a.dx) / c).floor() - 1,
+      ((view.right - a.dx) / c).ceil() + 1,
+      ((view.top - a.dy) / c).floor() - 1,
+      ((view.bottom - a.dy) / c).ceil() + 1,
+    ];
+  }
+
+  void _paintCity(Canvas canvas, Size size, Rect view) {
+    if (gridIn <= 0) return;
+    final c = _cell(size);
+    final radius = Radius.circular(c * 0.05);
+    final v = _visibleCells(size, view);
+
+    for (var col = v[0]; col <= v[1]; col++) {
+      for (var row = v[2]; row <= v[3]; row++) {
+        final n = _blockNoise(col, row);
+
+        // Most blocks are built-up; a few read as parks and a few as open
+        // ground, which stops the city from tiling visibly.
+        final Color base;
+        if (n > 0.94) {
+          base = const Color(0xFF16241C); // park
+        } else if (n < 0.07) {
+          base = const Color(0xFF141A26); // open ground / lot
+        } else {
+          base = Color.lerp(
+            const Color(0xFF171E2B),
+            const Color(0xFF222C40),
+            n,
+          )!;
+        }
+
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(_blockRect(size, col, row), radius),
+          Paint()..color = base.withValues(alpha: gridIn),
+        );
+      }
     }
   }
 
-  // Rival turf, in the colourblind-safe ownership palette. They fade up in a
-  // stagger as the camera widens, so the city fills in rather than popping.
+  // Rival turf. Drawn as the city's own blocks lit up in the owner's colour —
+  // not as translucent rectangles laid over the map. Flat rectangles at low
+  // alpha over a near-black ground turn muddy (olive, brown, maroon), which is
+  // exactly how the earlier version failed.
+  //
+  // Each owner also gets a hatch at their own angle, so ownership never rests
+  // on hue alone (CLAUDE.md Part 5, accessibility).
   void _paintRivals(Canvas canvas, Size size) {
+    final c = _cell(size);
+    final radius = Radius.circular(c * 0.05);
+
     for (var i = 0; i < _rivals.length; i++) {
       final r = _rivals[i];
-      // Stagger: each plot starts a little after the one before.
+      // Stagger: each district lights up a little after the one before.
       final t = ((rivals - i * 0.09) / 0.5).clamp(0.0, 1.0);
       if (t <= 0) continue;
 
       final colour = AppColors.ownershipPalette[r[4]];
-      final rect = Rect.fromPoints(
+      final region = Rect.fromPoints(
         _at(size, r[0], r[1]),
         _at(size, r[0] + r[2], r[1] + r[3]),
       );
 
-      canvas.drawRect(
-        rect,
-        Paint()..color = colour.withValues(alpha: 0.20 * t),
+      // Soft ground glow, so the district reads as lit rather than tinted.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(region.inflate(c * 0.10), radius),
+        Paint()
+          ..color = colour.withValues(alpha: 0.20 * t)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.22),
       );
-      canvas.drawRect(
-        rect,
+
+      // The blocks themselves, lit in the owner's colour.
+      for (var col = r[0]; col < r[0] + r[2]; col++) {
+        for (var row = r[1]; row < r[1] + r[3]; row++) {
+          final n = _blockNoise(col, row);
+          final rect = _blockRect(size, col, row);
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rect, radius),
+            Paint()
+              ..color = Color.lerp(colour, Colors.white, 0.10 + 0.16 * n)!
+                  .withValues(alpha: (0.50 + 0.22 * n) * t),
+          );
+        }
+      }
+
+      // Per-owner hatch, clipped to the district.
+      canvas.save();
+      canvas.clipRRect(RRect.fromRectAndRadius(region, radius));
+      final angle = (r[4] % 4) * math.pi / 4;
+      final step = c * 0.20;
+      final span = region.longestSide * 1.6;
+      final hatch = Paint()
+        ..color = Colors.white.withValues(alpha: 0.13 * t)
+        ..strokeWidth = c * 0.022;
+      canvas.save();
+      canvas.translate(region.center.dx, region.center.dy);
+      canvas.rotate(angle);
+      for (var d = -span; d <= span; d += step) {
+        canvas.drawLine(Offset(d, -span), Offset(d, span), hatch);
+      }
+      canvas.restore();
+      canvas.restore();
+
+      // Crisp rim to seal the edge.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(region, radius),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0 / 1.5
-          ..color = colour.withValues(alpha: 0.55 * t),
+          ..strokeWidth = c * 0.022
+          ..color = Color.lerp(colour, Colors.white, 0.35)!
+              .withValues(alpha: 0.75 * t),
       );
     }
   }
