@@ -51,6 +51,11 @@ class _Beat {
   static const fadeOut = [0.95, 1.00];
 }
 
+// How far into the flag beat the pole actually strikes the ground. Shared,
+// because the screen shake and the painter both key off the same instant —
+// if they drifted apart the knock would land before or after the impact.
+const double _flagDrop = 0.42;
+
 class SplashScreen extends StatefulWidget {
   final VoidCallback onDone;
   const SplashScreen({super.key, required this.onDone});
@@ -121,12 +126,21 @@ class _SplashScreenState extends State<SplashScreen>
               ? math.sin(shakeT * math.pi * 7) * 12 * (1 - shakeT)
               : 0.0;
 
+          // A second, much smaller knock when the flag drives into the ground.
+          // Two impacts of the same size would read as one long rumble; this
+          // one has to feel like a tap after a bang.
+          final flagT = _seg(_Beat.flag, c: Curves.linear);
+          final plant = ((flagT - _flagDrop) / 0.20).clamp(0.0, 1.0);
+          final plantShake = plant > 0 && plant < 1
+              ? math.sin(plant * math.pi * 5) * 3.5 * (1 - plant)
+              : 0.0;
+
           final fade = 1 - _seg(_Beat.fadeOut, c: Curves.easeIn);
 
           return Opacity(
             opacity: fade.clamp(0.0, 1.0),
             child: Transform.translate(
-              offset: Offset(shake, shake * 0.5),
+              offset: Offset(shake, shake * 0.5 + plantShake),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -142,7 +156,9 @@ class _SplashScreenState extends State<SplashScreen>
                       snap: _seg(_Beat.snap, c: Curves.linear),
                       flood: _seg(_Beat.flood, c: Curves.easeOutCubic),
                       shock: _seg(_Beat.shock, c: Curves.easeOutCubic),
-                      flag: _seg(_Beat.flag, c: Curves.easeOutBack),
+                      // Linear: the flag stages its own fall, impact, settle
+                      // and unfurl internally, so a curve here would fight it.
+                      flag: _seg(_Beat.flag, c: Curves.linear),
                       push: _seg(_Beat.iconIn, c: Curves.easeOutCubic),
                       backdrop: _backdrop,
                       time: _c.value,
@@ -543,40 +559,77 @@ class _CityPainter extends CustomPainter {
   }
 
   // The flag planted on the corner where the loop was sealed — the beat that
-  // turns "a shape filled in" into "this ground is mine". It drives itself
-  // into the block: the pole drops in from above, overshoots, and the cloth
-  // unfurls a moment behind it.
-  void _paintFlag(Canvas canvas, Size size, Offset foot) {
+  // turns "a shape got filled in" into "this ground is mine".
+  //
+  // Staged rather than eased as one curve, because a plant is four distinct
+  // events and a single curve blurs them into a glide:
+  //   fall    — accelerates downward under gravity (easeIn, not easeOut)
+  //   impact  — a dust ring punches outward at the moment of contact
+  //   settle  — the pole rings out with a damped oscillation
+  //   unfurl  — the cloth catches, overshoots, then flutters
+  //
+  // The base sits exactly on the closure vertex, so it is planted on the
+  // corner rather than floating near it.
+  void _paintFlag(Canvas canvas, Size size, Offset corner) {
     final c = _cell(size);
-    final poleH = c * 1.75;
+    final f = flag.clamp(0.0, 1.0);
+    final poleH = c * 0.95;
 
-    // Plant just inside the corner rather than exactly on it, so the flag
-    // stands in the claimed ground instead of straddling its edge.
-    final at = foot + Offset(c * 0.42, -c * 0.28);
+    // Stand just inside the corner. Exactly on the vertex the pole falls on
+    // the claim's white rim and disappears into it; a quarter-block in, it
+    // still reads as marking that corner but has ground of its own.
+    final at = corner + Offset(c * 0.24, -c * 0.24);
 
-    // easeOutBack on the beat already overshoots, so the pole lands with a
-    // little punch instead of gliding to a stop.
-    final drive = flag.clamp(0.0, 1.2);
-    final baseY = at.dy;
-    final topY = baseY - poleH * drive;
+    // ── fall ────────────────────────────────────────────────────────────────
+    final drop = (f / _flagDrop).clamp(0.0, 1.0);
+    final falling = drop < 1.0;
+    // Gravity accelerates; easeOut here would make it float down like litter.
+    final fallen = Curves.easeInCubic.transform(drop);
+    final dropOffset = falling ? -(1 - fallen) * poleH * 2.6 : 0.0;
 
-    // Shadow pooled at the foot, so it reads as standing ON the ground.
-    canvas.drawOval(
-      Rect.fromCenter(
-          center: Offset(at.dx, baseY), width: c * 0.52, height: c * 0.15),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.55 * flag.clamp(0.0, 1.0))
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.05),
-    );
+    // ── settle ──────────────────────────────────────────────────────────────
+    final since = ((f - _flagDrop) / (1 - _flagDrop)).clamp(0.0, 1.0);
+    final ring = falling
+        ? 0.0
+        : math.sin(since * math.pi * 5) * math.exp(-since * 6) * c * 0.05;
 
-    // Pole, dark-cored then bright, so it stays legible whether it falls on
-    // the bright claim fill or on the dark city behind it.
+    final baseY = at.dy + dropOffset;
+    final topY = baseY - poleH + ring;
+
+    // ── impact ──────────────────────────────────────────────────────────────
+    if (!falling) {
+      final burst = (since / 0.30).clamp(0.0, 1.0);
+      if (burst < 1) {
+        canvas.drawCircle(
+          Offset(at.dx, at.dy),
+          c * (0.05 + 0.34 * Curves.easeOutCubic.transform(burst)),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = c * 0.022 * (1 - burst)
+            ..color = Colors.white.withValues(alpha: 0.6 * (1 - burst)),
+        );
+      }
+    }
+
+    // Shadow pools only once it is actually down.
+    if (!falling) {
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(at.dx, at.dy), width: c * 0.26, height: c * 0.075),
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.55)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.03),
+      );
+    }
+
+    // Pole: dark core then bright, so it stays legible on the bright claim
+    // fill and on the dark city alike.
     canvas.drawLine(
       Offset(at.dx, baseY),
       Offset(at.dx, topY),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.55)
-        ..strokeWidth = c * 0.085
+        ..color = Colors.black.withValues(alpha: 0.5)
+        ..strokeWidth = c * 0.050
         ..strokeCap = StrokeCap.round,
     );
     canvas.drawLine(
@@ -584,24 +637,26 @@ class _CityPainter extends CustomPainter {
       Offset(at.dx, topY),
       Paint()
         ..color = Colors.white
-        ..strokeWidth = c * 0.045
+        ..strokeWidth = c * 0.026
         ..strokeCap = StrokeCap.round,
     );
 
-    // Cloth: unfurls after the pole is in, with a slow wave so it looks like
-    // fabric rather than a triangle stuck to a stick.
-    final unfurl = ((flag - 0.35) / 0.65).clamp(0.0, 1.0);
+    // ── unfurl ──────────────────────────────────────────────────────────────
+    final unfurl =
+        Curves.easeOutBack.transform(((since - 0.10) / 0.55).clamp(0.0, 1.0));
     if (unfurl > 0) {
-      final w = c * 1.00 * unfurl;
-      final h = c * 0.62;
-      final wave = math.sin(time * 7) * c * 0.05 * unfurl;
+      final w = c * 0.46 * unfurl.clamp(0.0, 1.12);
+      final h = c * 0.29;
+      // Snaps taut, then relaxes into a slow idle flutter.
+      final energy = math.exp(-since * 3.2);
+      final wave = math.sin(time * 9 - 1.2) * c * (0.012 + 0.030 * energy);
 
       final cloth = Path()
         ..moveTo(at.dx, topY)
         ..quadraticBezierTo(
-            at.dx + w * 0.55, topY - h * 0.18 + wave, at.dx + w, topY + wave)
-        ..quadraticBezierTo(at.dx + w * 0.55, topY + h * 0.42 - wave,
-            at.dx, topY + h * 0.62)
+            at.dx + w * 0.55, topY - h * 0.16 + wave, at.dx + w, topY + wave)
+        ..quadraticBezierTo(
+            at.dx + w * 0.55, topY + h * 0.46 - wave, at.dx, topY + h * 0.66)
         ..close();
 
       canvas.drawPath(
@@ -617,24 +672,21 @@ class _CityPainter extends CustomPainter {
         cloth,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = c * 0.028
-          ..color = Colors.white.withValues(alpha: 0.85),
+          ..strokeWidth = c * 0.014
+          ..color = Colors.white.withValues(alpha: 0.8),
       );
     }
 
-    // Finial glint at the top of the pole.
+    // Finial.
     canvas.drawCircle(
       Offset(at.dx, topY),
-      c * 0.14,
+      c * 0.085,
       Paint()
-        ..color = AppColors.go.withValues(alpha: 0.7 * flag.clamp(0.0, 1.0))
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.12),
+        ..color = AppColors.go.withValues(alpha: 0.65 * f)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, c * 0.07),
     );
     canvas.drawCircle(
-      Offset(at.dx, topY),
-      c * 0.055,
-      Paint()..color = Colors.white,
-    );
+        Offset(at.dx, topY), c * 0.030, Paint()..color = Colors.white);
   }
 
   void _paintShockwave(Canvas canvas, Size size, Offset from) {
