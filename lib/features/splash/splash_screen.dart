@@ -1,18 +1,27 @@
-// splash_screen.dart — The app-open cinematic.
+// splash_screen.dart — The app-open cinematic ("City Reveal").
 //
-// This is Claimr's title sequence, and it deliberately tells the game rather
-// than showing a generic logo: a city grid resolves out of the dark, a neon
-// GPS trail runs the streets, the loop snaps shut, and the enclosed block
-// floods with your colour in a shockwave. That is the entire game in four
-// seconds — the first thing a new player sees is the thing they're about to do.
+// Claimr's title sequence, built to say what the game is before a single tap:
+// we open tight on your runner in the dark, the camera pulls back while a GPS
+// trail draws itself *along the streets*, rival territory fades up across the
+// city as the view widens, and your loop snaps shut — flooding the enclosed
+// block with your colour.
 //
-// It's drawn procedurally (CustomPainter) rather than played from a Lottie/
-// video file: it stays razor sharp at any screen size, weighs nothing in the
-// bundle, and every beat is tunable in code.
+// Three ideas carry it, and each one fixes something that reads as amateur:
 //
-// It plays in full on every app open, by product decision — this is the
-// game's title card, not a loading screen. It stays skippable from the first
-// moments so anyone in a hurry is never trapped.
+//  1. The route is defined in GRID CELLS, not free coordinates, so the trail
+//     lands exactly on the street lines. A path that ignores the streets it's
+//     drawn over is the single biggest tell of a fake map.
+//  2. A real camera (translate + scale inside the painter) pulls back from the
+//     runner to the city. Camera scale never drops below 1, so the canvas can
+//     never shrink away from the screen edges and expose bare background.
+//  3. Rivals already own turf when you arrive, drawn in the colourblind-safe
+//     ownership palette — the world is contested before you claim anything.
+//
+// Drawn procedurally rather than played from a Lottie/video: sharp at any
+// size, nothing in the bundle, every beat tunable from the table below.
+//
+// Plays in full on every app open, by product decision — this is the game's
+// title card, not a loading screen. Skippable from the first moments.
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -22,20 +31,22 @@ import 'package:flutter/material.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 
-// Beat sheet, in normalised time (0..1 of the controller). Keeping every beat
-// in one table is what makes the timing tunable without hunting through paint
-// code — nudge a number here and the whole sequence re-times around it.
+// Beat sheet, in normalised time (0..1). Keeping every beat in one table is
+// what makes the sequence tunable — nudge a number and the rest re-times
+// around it, without hunting through paint code.
 class _Beat {
-  static const gridIn = [0.00, 0.16]; // grid resolves out of black
-  static const trail = [0.10, 0.50]; // GPS trail draws the loop
-  static const snap = [0.48, 0.56]; // loop closes — flash + shake
-  static const flood = [0.51, 0.72]; // territory floods with colour
-  static const shock = [0.51, 0.78]; // shockwave ring crosses the screen
-  static const iconIn = [0.60, 0.74]; // app icon rises
-  static const wordIn = [0.66, 0.80]; // wordmark punches in
-  static const shine = [0.78, 0.92]; // light sweep across the wordmark
-  static const taglineIn = [0.80, 0.90];
-  static const fadeOut = [0.94, 1.00];
+  static const gridIn = [0.00, 0.10]; // streets resolve out of black
+  static const pullback = [0.00, 0.56]; // camera retreats from runner to city
+  static const trail = [0.08, 0.50]; // GPS trail runs the streets
+  static const rivals = [0.16, 0.52]; // rival turf fades up as the view widens
+  static const snap = [0.48, 0.56]; // loop closes — flash, sparks, shake
+  static const flood = [0.51, 0.72]; // your block floods with colour
+  static const shock = [0.51, 0.80]; // shockwave crosses the city
+  static const iconIn = [0.62, 0.76];
+  static const wordIn = [0.68, 0.82];
+  static const shine = [0.80, 0.94]; // light sweep across the wordmark
+  static const taglineIn = [0.82, 0.92];
+  static const fadeOut = [0.95, 1.00];
 }
 
 class SplashScreen extends StatefulWidget {
@@ -48,7 +59,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  static const _duration = Duration(milliseconds: 4400);
+  static const _duration = Duration(milliseconds: 4600);
 
   late final AnimationController _c;
   bool _finished = false;
@@ -56,8 +67,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    // Rolls immediately — nothing to load, nothing to wait on, so the very
-    // first frame after launch is already the cinematic.
+    // Rolls immediately — nothing to load, nothing to await, so the first
+    // frame after launch is already the cinematic.
     _c = AnimationController(vsync: this, duration: _duration)
       ..forward().whenComplete(_finish);
   }
@@ -74,76 +85,45 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
-  // Progress through one beat, eased, clamped outside it.
   double _seg(List<double> beat, {Curve c = Curves.easeOut}) =>
       c.transform(((_c.value - beat[0]) / (beat[1] - beat[0])).clamp(0.0, 1.0));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.background,
       body: AnimatedBuilder(
         animation: _c,
         builder: (context, _) {
-          final t = _c.value;
-
-          // Camera shake on the capture — damped, so it hits hard then settles.
+          // Capture shake — damped, so it hits hard and settles fast.
           final shakeT = _seg(_Beat.snap, c: Curves.linear);
           final shake = shakeT > 0 && shakeT < 1
-              ? math.sin(shakeT * math.pi * 7) * 13 * (1 - shakeT)
+              ? math.sin(shakeT * math.pi * 7) * 12 * (1 - shakeT)
               : 0.0;
 
           final fade = 1 - _seg(_Beat.fadeOut, c: Curves.easeIn);
 
-          // How far the map scene has receded behind the brand lockup.
-          final settle = _seg(_Beat.iconIn, c: Curves.easeOutCubic);
-
           return Opacity(
             opacity: fade.clamp(0.0, 1.0),
             child: Transform.translate(
-              offset: Offset(shake, shake * 0.55),
+              offset: Offset(shake, shake * 0.5),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // The cinematic itself. `repaint: _c` drives the painter
-                  // directly, so each frame is a paint, not a widget rebuild.
-                  // Once the capture lands, the camera pushes in slightly and
-                  // the scrim below drops the contrast, so the scene becomes a
-                  // backdrop for the logo rather than competing with it.
-                  // The push must be *inward* (>1): scaling down would shrink
-                  // the canvas away from the screen edges and expose bare
-                  // background as a hard-edged rectangle.
-                  Transform.scale(
-                    // A slow drift across the whole sequence, then a firmer
-                    // push once the capture lands. Constant subtle motion is
-                    // what separates a title sequence from a static logo.
-                    scale: 1.03 + 0.05 * t + 0.09 * settle,
-                    child: CustomPaint(
-                      painter: _CinematicPainter(
-                        repaint: _c,
-                        gridIn: _seg(_Beat.gridIn),
-                        trail: _seg(_Beat.trail, c: Curves.easeInOutCubic),
-                        snap: _seg(_Beat.snap, c: Curves.linear),
-                        flood: _seg(_Beat.flood, c: Curves.easeOutCubic),
-                        shock: _seg(_Beat.shock, c: Curves.easeOutCubic),
-                        time: t,
-                      ),
-                    ),
-                  ),
-                  // Scrim: pushes the scene down in contrast right where the
-                  // lockup sits, so the wordmark never has to fight the
-                  // territory's fill or rim for legibility.
-                  IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          radius: 0.85,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.72 * settle),
-                            Colors.black.withValues(alpha: 0.18 * settle),
-                          ],
-                        ),
-                      ),
+                  // `repaint: _c` drives the painter directly — each frame is
+                  // a paint, not a widget rebuild.
+                  CustomPaint(
+                    painter: _CityPainter(
+                      repaint: _c,
+                      gridIn: _seg(_Beat.gridIn),
+                      pull: _seg(_Beat.pullback, c: Curves.easeInOutCubic),
+                      trail: _seg(_Beat.trail, c: Curves.easeInOutCubic),
+                      rivals: _seg(_Beat.rivals),
+                      snap: _seg(_Beat.snap, c: Curves.linear),
+                      flood: _seg(_Beat.flood, c: Curves.easeOutCubic),
+                      shock: _seg(_Beat.shock, c: Curves.easeOutCubic),
+                      push: _seg(_Beat.iconIn, c: Curves.easeOutCubic),
+                      time: _c.value,
                     ),
                   ),
                   _brandLockup(),
@@ -157,43 +137,43 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  // Icon + wordmark + tagline, revealed after the capture lands.
+  // The lockup lives in its own band at the bottom, clear of the claimed
+  // block up top. Giving it dedicated space beats dimming the art behind it.
   Widget _brandLockup() {
     final iconIn = _seg(_Beat.iconIn, c: Curves.easeOutBack);
     final wordIn = _seg(_Beat.wordIn, c: Curves.easeOutBack);
     final shine = _seg(_Beat.shine, c: Curves.easeInOut);
     final taglineIn = _seg(_Beat.taglineIn);
 
-    return Center(
+    return Align(
+      alignment: const Alignment(0, 0.68),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Opacity(
             opacity: iconIn.clamp(0.0, 1.0),
             child: Transform.scale(
-              scale: 0.55 + 0.45 * iconIn,
+              scale: 0.6 + 0.4 * iconIn,
               child: Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.accent.withValues(alpha: 0.55 * iconIn),
-                      blurRadius: 44,
-                      spreadRadius: 2,
+                      color: AppColors.accent.withValues(alpha: 0.5 * iconIn),
+                      blurRadius: 40,
+                      spreadRadius: 1,
                     ),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(24),
                   child: Image.asset('assets/app_icon.png',
-                      width: 104, height: 104),
+                      width: 88, height: 88),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 24),
-
-          // Wordmark, with a diagonal light sweep once it has landed.
+          const SizedBox(height: 20),
           ShaderMask(
             blendMode: BlendMode.srcATop,
             shaderCallback: (rect) => LinearGradient(
@@ -214,19 +194,19 @@ class _SplashScreenState extends State<SplashScreen>
             child: Opacity(
               opacity: wordIn.clamp(0.0, 1.0),
               child: Transform.translate(
-                offset: Offset(0, 26 * (1 - wordIn)),
+                offset: Offset(0, 24 * (1 - wordIn)),
                 child: Text(
                   AppConstants.appName.toUpperCase(),
                   style: TextStyle(
                     fontFamily: 'Baloo2',
-                    fontSize: 54,
+                    fontSize: 50,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 5,
                     color: Colors.white,
                     shadows: [
                       Shadow(
-                        color: AppColors.accent.withValues(alpha: 0.85),
-                        blurRadius: 30,
+                        color: AppColors.accent.withValues(alpha: 0.9),
+                        blurRadius: 32,
                       ),
                     ],
                   ),
@@ -234,17 +214,17 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Opacity(
             opacity: taglineIn.clamp(0.0, 1.0),
             child: Transform.translate(
-              offset: Offset(0, 14 * (1 - taglineIn)),
+              offset: Offset(0, 12 * (1 - taglineIn)),
               child: Text(
                 'Claim the streets.',
                 style: TextStyle(
                   fontFamily: 'Baloo2',
-                  color: Colors.white.withValues(alpha: 0.75),
-                  fontSize: 15,
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 14,
                   letterSpacing: 3.5,
                   fontWeight: FontWeight.w600,
                 ),
@@ -258,7 +238,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _skipButton() => Positioned(
         right: 16,
-        bottom: 24,
+        bottom: 20,
         child: SafeArea(
           child: Opacity(
             opacity: _seg([0.04, 0.12]).clamp(0.0, 1.0),
@@ -268,7 +248,7 @@ class _SplashScreenState extends State<SplashScreen>
                 'SKIP  ▸',
                 style: TextStyle(
                   fontFamily: 'Baloo2',
-                  color: Colors.white.withValues(alpha: 0.5),
+                  color: Colors.white.withValues(alpha: 0.45),
                   letterSpacing: 2,
                   fontWeight: FontWeight.w700,
                 ),
@@ -280,55 +260,74 @@ class _SplashScreenState extends State<SplashScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The painter: city grid → GPS trail → loop snap → territory flood.
+// The painter. Everything below works in CELL coordinates — integer steps of
+// one city block from a fixed anchor — so streets, your route and rival turf
+// all land on the same lattice by construction, never by eyeballed numbers.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _CinematicPainter extends CustomPainter {
-  final double gridIn, trail, snap, flood, shock, time;
+class _CityPainter extends CustomPainter {
+  final double gridIn, pull, trail, rivals, snap, flood, shock, push, time;
 
-  _CinematicPainter({
+  _CityPainter({
     required Listenable repaint,
     required this.gridIn,
+    required this.pull,
     required this.trail,
+    required this.rivals,
     required this.snap,
     required this.flood,
     required this.shock,
+    required this.push,
     required this.time,
   }) : super(repaint: repaint);
 
-  // The route, in a normalised 0..1 box. Deliberately blocky with a couple of
-  // angled cuts — it should read as "streets", not as a geometric shape.
-  // Kept wide enough that the brand lockup sits comfortably *inside* the
-  // claimed block — a wordmark clipped by its own territory reads as a bug.
-  static const List<Offset> _route = [
-    Offset(0.12, 0.74),
-    Offset(0.12, 0.52),
-    Offset(0.26, 0.52),
-    Offset(0.26, 0.30),
-    Offset(0.54, 0.30),
-    Offset(0.64, 0.22),
-    Offset(0.88, 0.22),
-    Offset(0.88, 0.48),
-    Offset(0.76, 0.60),
-    Offset(0.76, 0.74),
-    Offset(0.44, 0.74),
-    Offset(0.12, 0.74), // closes the loop
+  // Your route, in whole city blocks from the anchor. Rectilinear with one
+  // diagonal cut — it should read as a walkable circuit of real streets.
+  static const List<List<int>> _route = [
+    [-2, 2], [-2, -1], [0, -1], [0, -3], [2, -3],
+    [3, -2], [3, 0], [1, 0], [1, 2], [-2, 2], // closes
   ];
 
-  Path _routePath(Size size) {
-    // Inset so the loop never kisses the screen edge on tall or wide devices.
-    final box = Rect.fromLTWH(
-      size.width * 0.06,
-      size.height * 0.10,
-      size.width * 0.88,
-      size.height * 0.80,
-    );
-    Offset at(Offset n) =>
-        Offset(box.left + n.dx * box.width, box.top + n.dy * box.height);
+  // Rival turf: [col, row, widthCells, heightCells, paletteIndex]. Placed
+  // outside your block so the reveal shows a contested city, not a collision.
+  // Kept inside the resting camera's field (roughly cols -4..5, rows -10..9)
+  // and clear of your own block (cols -2..3, rows -3..2) — turf you can see is
+  // the whole point of drawing it.
+  // Rows chosen so nothing is sliced by the top edge or hidden behind the
+  // lockup band at the bottom; columns keep clear of the block (cols -2..3)
+  // while sitting flush against it, the way real adjacent plots would.
+  static const List<List<int>> _rivals = [
+    [-4, -7, 2, 2, 0],
+    [2, -7, 2, 2, 2],
+    [-4, -1, 2, 3, 5],
+    [4, -1, 2, 3, 1],
+    [-4, 5, 2, 2, 3],
+    [2, 5, 2, 3, 6],
+  ];
 
-    final path = Path()..moveTo(at(_route.first).dx, at(_route.first).dy);
-    for (final p in _route.skip(1)) {
-      path.lineTo(at(p).dx, at(p).dy);
+  // Block size sets the final framing: at rest the camera shows about ±5.5
+  // blocks horizontally, so the route (5 wide) sits centred with a clear
+  // margin of rival turf either side. Bigger cells and the city overflows.
+  double _cell(Size size) => size.width / 11.0;
+
+  // Offset by half a cell so the route — which spans cols -2..3 and rows
+  // -3..2 — ends up optically centred rather than hanging off to one side.
+  Offset _anchor(Size size) {
+    final c = _cell(size);
+    return Offset(size.width * 0.5 - c * 0.5, size.height * 0.34 + c * 0.5);
+  }
+
+  Offset _at(Size size, num col, num row) {
+    final c = _cell(size);
+    final a = _anchor(size);
+    return Offset(a.dx + col * c, a.dy + row * c);
+  }
+
+  Path _routePath(Size size) {
+    final path = Path();
+    for (var i = 0; i < _route.length; i++) {
+      final p = _at(size, _route[i][0], _route[i][1]);
+      i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
     }
     return path;
   }
@@ -336,186 +335,240 @@ class _CinematicPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     _paintBackdrop(canvas, size);
-    _paintGrid(canvas, size);
 
     final path = _routePath(size);
     final metric = path.computeMetrics().first;
-    final closurePoint = metric.getTangentForOffset(0)?.position ??
-        Offset(size.width / 2, size.height / 2);
+    final start = metric.getTangentForOffset(0)!.position;
+    final centre = Offset(size.width / 2, size.height / 2);
 
-    if (flood > 0) _paintFlood(canvas, size, path, closurePoint);
-    if (trail > 0) _paintTrail(canvas, metric);
-    if (snap > 0) _paintSnap(canvas, size, closurePoint);
-    if (shock > 0) _paintShockwave(canvas, size, closurePoint);
-  }
+    // ── Camera ──────────────────────────────────────────────────────────────
+    // Opens tight on the runner, retreats to the whole city, then pushes in a
+    // touch as the logo lands. Scale stays >= 1 at all times: a camera that
+    // zooms past 1 would shrink the drawing away from the screen edges and
+    // expose bare background as a hard-edged rectangle.
+    final cam = (2.5 - 1.5 * pull) + 0.05 * push;
+    final focus = Offset.lerp(start, centre, pull)!;
 
-  // Deep vignette so the centre lockup always has contrast to sit on.
-  void _paintBackdrop(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(rect, Paint()..color = AppColors.background);
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = ui.Gradient.radial(
-          rect.center,
-          size.longestSide * 0.72,
-          [
-            AppColors.accent.withValues(alpha: 0.10 * gridIn),
-            Colors.black.withValues(alpha: 0.86),
-          ],
-        ),
-    );
-  }
-
-  // The city grid, resolving out of the dark with a slow drift — it reads as a
-  // map settling into focus rather than a static wallpaper.
-  void _paintGrid(Canvas canvas, Size size) {
-    if (gridIn <= 0) return;
-    final drift = time * 26; // slow parallax across the whole sequence
-    final spacing = size.shortestSide / 7.5;
-
-    final thin = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.055 * gridIn)
-      ..strokeWidth = 1;
-    final major = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.11 * gridIn)
-      ..strokeWidth = 2;
-
-    var i = 0;
-    for (var x = -spacing + (drift % spacing); x < size.width; x += spacing) {
-      canvas.drawLine(
-          Offset(x, 0), Offset(x, size.height), i++ % 3 == 0 ? major : thin);
-    }
-    i = 0;
-    for (var y = -spacing + (drift % spacing); y < size.height; y += spacing) {
-      canvas.drawLine(
-          Offset(0, y), Offset(size.width, y), i++ % 3 == 0 ? major : thin);
-    }
-  }
-
-  // The claimed block. Revealed by growing a circular clip out of the closure
-  // point, so the colour visibly *floods* the territory from where you sealed
-  // it rather than simply fading up.
-  void _paintFlood(Canvas canvas, Size size, Path path, Offset from) {
-    final radius = flood * size.longestSide * 1.15;
     canvas.save();
-    canvas.clipPath(Path()
-      ..addOval(Rect.fromCircle(center: from, radius: radius)));
+    canvas.translate(centre.dx, centre.dy);
+    canvas.scale(cam);
+    canvas.translate(-focus.dx, -focus.dy);
+
+    // World is drawn in a margin wide enough that the retreating camera never
+    // runs out of city to show.
+    _paintStreets(canvas, size);
+    if (rivals > 0) _paintRivals(canvas, size);
+    if (flood > 0) _paintClaim(canvas, size, path, start);
+    if (trail > 0) _paintTrail(canvas, metric);
+    if (snap > 0) _paintSnap(canvas, size, start);
+    if (shock > 0) _paintShockwave(canvas, size, start);
+
+    canvas.restore();
+
+    _paintVignette(canvas, size);
+  }
+
+  void _paintBackdrop(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.background);
+  }
+
+  // Two-tier street network: avenues every third block read heavier than the
+  // minor streets between them. A single uniform lattice looks like graph
+  // paper; the tiering is what makes it read as a city.
+  void _paintStreets(Canvas canvas, Size size) {
+    if (gridIn <= 0) return;
+    final c = _cell(size);
+    final a = _anchor(size);
+
+    final street = Paint()
+      ..color = AppColors.accent.withValues(alpha: 0.10 * gridIn)
+      ..strokeWidth = 1.0 / 1.5;
+    final avenue = Paint()
+      ..color = AppColors.accent.withValues(alpha: 0.22 * gridIn)
+      ..strokeWidth = 2.5 / 1.5;
+
+    // Range covers the widest camera framing with room to spare.
+    const k = 26;
+    final far = c * k;
+    for (var i = -k; i <= k; i++) {
+      final p = i % 3 == 0 ? avenue : street;
+      canvas.drawLine(
+          Offset(a.dx + i * c, a.dy - far), Offset(a.dx + i * c, a.dy + far), p);
+      canvas.drawLine(
+          Offset(a.dx - far, a.dy + i * c), Offset(a.dx + far, a.dy + i * c), p);
+    }
+  }
+
+  // Rival turf, in the colourblind-safe ownership palette. They fade up in a
+  // stagger as the camera widens, so the city fills in rather than popping.
+  void _paintRivals(Canvas canvas, Size size) {
+    for (var i = 0; i < _rivals.length; i++) {
+      final r = _rivals[i];
+      // Stagger: each plot starts a little after the one before.
+      final t = ((rivals - i * 0.09) / 0.5).clamp(0.0, 1.0);
+      if (t <= 0) continue;
+
+      final colour = AppColors.ownershipPalette[r[4]];
+      final rect = Rect.fromPoints(
+        _at(size, r[0], r[1]),
+        _at(size, r[0] + r[2], r[1] + r[3]),
+      );
+
+      canvas.drawRect(
+        rect,
+        Paint()..color = colour.withValues(alpha: 0.20 * t),
+      );
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0 / 1.5
+          ..color = colour.withValues(alpha: 0.55 * t),
+      );
+    }
+  }
+
+  // Your block. Revealed by growing a circular clip out of the closure point,
+  // so the colour visibly floods the territory from where you sealed it.
+  void _paintClaim(Canvas canvas, Size size, Path path, Offset from) {
+    final radius = flood * size.longestSide * 1.4;
+    canvas.save();
+    canvas.clipPath(
+        Path()..addOval(Rect.fromCircle(center: from, radius: radius)));
 
     canvas.drawPath(
       path,
       Paint()
-        ..style = PaintingStyle.fill
         ..shader = ui.Gradient.linear(
-          Offset(0, size.height * 0.2),
-          Offset(size.width, size.height * 0.8),
+          _at(size, -3, -4),
+          _at(size, 3, 3),
+          // Blue-dominant: mixing far into the green made it read as a muddy
+          // teal rather than as the player's own colour.
           [
-            AppColors.accent.withValues(alpha: 0.62),
-            AppColors.go.withValues(alpha: 0.42),
+            AppColors.accent.withValues(alpha: 0.72),
+            AppColors.accentDeep.withValues(alpha: 0.62),
           ],
         ),
     );
-    // Bright rim on the claimed edge.
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = Colors.white.withValues(alpha: 0.4),
+        ..strokeWidth = 3.0 / 1.5
+        ..color = Colors.white.withValues(alpha: 0.75),
     );
     canvas.restore();
   }
 
-  // The GPS trail drawing itself, with a glowing runner head at the tip.
+  // The trail drawing itself, with a glowing runner head at the tip.
   void _paintTrail(Canvas canvas, ui.PathMetric metric) {
     final drawn = metric.extractPath(0, metric.length * trail);
 
-    // Wide soft glow underneath, then a hard bright core on top — the two-pass
-    // trick that makes a stroke read as neon rather than as a coloured line.
+    // Wide soft glow, then a hard bright core: the two-pass stroke that makes
+    // a line read as neon rather than as a coloured stroke.
     canvas.drawPath(
       drawn,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 15
+        ..strokeWidth = 13 / 1.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = AppColors.accent.withValues(alpha: 0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+        ..color = AppColors.accent.withValues(alpha: 0.55)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
     );
     canvas.drawPath(
       drawn,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 5
+        ..strokeWidth = 4.5 / 1.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = Colors.white.withValues(alpha: 0.92),
+        ..color = Colors.white.withValues(alpha: 0.95),
     );
 
-    // The runner head — only while the trail is still being drawn.
     if (trail >= 1) return;
     final head = metric.getTangentForOffset(metric.length * trail)?.position;
     if (head == null) return;
 
-    final pulse = 0.85 + 0.15 * math.sin(time * 40);
+    final pulse = 0.85 + 0.15 * math.sin(time * 42);
     canvas.drawCircle(
       head,
-      20 * pulse,
+      16 * pulse,
       Paint()
-        ..color = AppColors.accent.withValues(alpha: 0.55)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+        ..color = AppColors.accent.withValues(alpha: 0.6)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
     );
-    canvas.drawCircle(head, 6.5 * pulse, Paint()..color = Colors.white);
+    canvas.drawCircle(head, 5.0 * pulse, Paint()..color = Colors.white);
   }
 
-  // The instant the loop seals: a hot flash at the closure point plus a burst
-  // of sparks. Deterministic random, so the burst is identical every launch.
+  // The instant the loop seals: hot flash plus a ring of sparks. Angles are
+  // spread evenly with jitter — sampling them at random clumps, and a clumped
+  // burst reads as a glitch rather than an impact.
   void _paintSnap(Canvas canvas, Size size, Offset at) {
     final fade = 1 - snap;
 
     canvas.drawCircle(
       at,
-      size.shortestSide * (0.10 + 0.5 * snap),
+      size.shortestSide * (0.08 + 0.34 * snap),
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.85 * fade * fade)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 40 + 60 * snap),
+        ..color = Colors.white.withValues(alpha: 0.9 * fade * fade)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 30 + 50 * snap),
     );
 
-    // Spread the burst evenly around the circle (with a little jitter) rather
-    // than sampling angles at random — pure random clumps, and a clumped
-    // burst reads as a glitch instead of an impact.
-    final rng = math.Random(7);
-    const count = 34;
+    final rng = math.Random(11);
+    const count = 30;
     for (var i = 0; i < count; i++) {
-      final angle =
-          (i / count) * math.pi * 2 + (rng.nextDouble() - 0.5) * 0.35;
-      final reach = size.shortestSide * (0.28 + rng.nextDouble() * 0.55);
+      final angle = (i / count) * math.pi * 2 + (rng.nextDouble() - 0.5) * 0.3;
+      final reach = size.shortestSide * (0.16 + rng.nextDouble() * 0.3);
       final d = reach * Curves.easeOutCubic.transform(snap);
       final p = at + Offset(math.cos(angle) * d, math.sin(angle) * d);
       canvas.drawCircle(
         p,
-        (2.0 + rng.nextDouble() * 3.5) * fade,
+        (1.6 + rng.nextDouble() * 2.4) * fade,
         Paint()
-          ..color = (i.isEven ? Colors.white : AppColors.go)
-              .withValues(alpha: fade),
+          ..color =
+              (i.isEven ? Colors.white : AppColors.go).withValues(alpha: fade),
       );
     }
   }
 
-  // A ring pushing out past the screen edge — the "this land is mine" beat.
   void _paintShockwave(Canvas canvas, Size size, Offset from) {
     final fade = 1 - shock;
     canvas.drawCircle(
       from,
-      shock * size.longestSide * 0.95,
+      shock * size.longestSide * 1.1,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2 + 10 * fade
-        ..color = AppColors.accent.withValues(alpha: 0.75 * fade)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        ..strokeWidth = (1.5 + 9 * fade) / 1.5
+        ..color = AppColors.accent.withValues(alpha: 0.7 * fade)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+    );
+  }
+
+  // Drawn outside the camera transform so the framing stays put: darkens the
+  // corners and the lower band, keeping the lockup on clean ground.
+  void _paintVignette(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(size.width / 2, size.height * 0.42),
+          size.longestSide * 0.62,
+          [Colors.transparent, Colors.black.withValues(alpha: 0.55)],
+        ),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(0, size.height * 0.52),
+          Offset(0, size.height),
+          [Colors.transparent, Colors.black.withValues(alpha: 0.72 * push)],
+        ),
     );
   }
 
   @override
-  bool shouldRepaint(covariant _CinematicPainter old) => true;
+  bool shouldRepaint(covariant _CityPainter old) => true;
 }

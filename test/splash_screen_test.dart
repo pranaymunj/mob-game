@@ -45,7 +45,7 @@ void main() {
     await t.pump(const Duration(milliseconds: 2000));
     expect(done, isFalse, reason: 'must still be playing the full cinematic');
 
-    await t.pump(const Duration(milliseconds: 2600));
+    await t.pump(const Duration(milliseconds: 3200));
     expect(done, isTrue);
   });
 
