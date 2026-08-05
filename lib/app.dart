@@ -23,7 +23,11 @@ class ClaimrApp extends StatelessWidget {
   }
 }
 
-// Flow: splash animation -> (first run) onboarding -> home.
+// Flow: splash cinematic -> onboarding -> home, on EVERY app open.
+//
+// Both the cinematic and the onboarding cards replay each launch by product
+// decision, rather than being gated behind a first-run flag. Both are
+// skippable, so the fast path to Home stays two taps.
 class _Root extends StatefulWidget {
   const _Root();
 
@@ -33,24 +37,15 @@ class _Root extends StatefulWidget {
 
 class _RootState extends State<_Root> {
   bool _splashDone = false;
-  bool? _seen; // null = still loading the onboarding flag
-
-  @override
-  void initState() {
-    super.initState();
-    // Load the onboarding flag while the splash animates.
-    hasSeenOnboarding().then((v) {
-      if (mounted) setState(() => _seen = v);
-    });
-  }
+  bool _introDone = false;
 
   @override
   Widget build(BuildContext context) {
-    if (!_splashDone || _seen == null) {
+    if (!_splashDone) {
       return SplashScreen(onDone: () => setState(() => _splashDone = true));
     }
-    if (_seen == false) {
-      return OnboardingScreen(onDone: () => setState(() => _seen = true));
+    if (!_introDone) {
+      return OnboardingScreen(onDone: () => setState(() => _introDone = true));
     }
     return const HomeScreen();
   }
