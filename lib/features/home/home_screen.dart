@@ -19,7 +19,7 @@ import '../perks/perk_info.dart';
 import '../profile/profile_screen.dart';
 import '../run/run_screen.dart';
 import 'daily_reward.dart';
-import 'territory_backdrop.dart';
+import 'menu_backdrop.dart';
 
 final challengeProvider = FutureProvider.autoDispose<Challenge?>((ref) async {
   if (!ref.read(backendEnabledProvider)) return null;
@@ -55,17 +55,10 @@ class HomeScreen extends ConsumerWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const TerritoryBackdrop(),
-          // Darken toward the bottom so the CTA stays legible.
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Color(0xCC0B0E14)],
-              ),
-            ),
-          ),
+          // Carries its own scrims — the HUD and the CTA both need darker
+          // ground than the middle of the frame, so it is not a single
+          // top-to-bottom fade.
+          const MenuBackdrop(),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
