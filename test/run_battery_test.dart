@@ -48,6 +48,23 @@ class SilentBattery implements BatteryService {
   Future<bool> isCharging() async => false;
 }
 
+/// Answers slowly, so a new run can start while the reading is still in flight.
+class SlowBattery implements BatteryService {
+  final List<int?> levels;
+  final Duration delay;
+  int _i = 0;
+  SlowBattery(this.levels, {this.delay = const Duration(milliseconds: 150)});
+
+  @override
+  Future<int?> level() async {
+    await Future<void>.delayed(delay);
+    return _i < levels.length ? levels[_i++] : levels.last;
+  }
+
+  @override
+  Future<bool> isCharging() async => false;
+}
+
 List<GpsSample> _walk() {
   final now = DateTime.now();
   return [
@@ -104,5 +121,34 @@ void main() {
     expect(usage, isNotNull);
     expect(usage!.chargedDuringRun, isTrue);
     expect(usage.isMeaningful, isFalse);
+  });
+
+  // The battery read is slow enough that a player can tap Start again before
+  // it lands. If the late reading were applied anyway, the finished run's
+  // drain would appear on the new run's summary — a wrong number with nothing
+  // to reveal that it was wrong.
+  test('a reading that lands after a new run has started is discarded',
+      () async {
+    final container = ProviderContainer(overrides: [
+      locationServiceProvider.overrideWithValue(FakeLocation(_walk())),
+      batteryServiceProvider.overrideWithValue(SlowBattery([90, 60])),
+      backendEnabledProvider.overrideWithValue(false),
+    ]);
+    addTearDown(container.dispose);
+
+    final c = container.read(runControllerProvider.notifier);
+    await c.start();
+    // Long enough for the run's OWN start reading to land — otherwise there is
+    // no start value, the end reading bails early, and the test would pass
+    // while exercising nothing.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    c.stop(); // fires the slow end reading
+
+    // Start again before that reading can land.
+    await c.start();
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+
+    expect(c.state.battery, isNull,
+        reason: "the previous run's drain must not appear on the new run");
   });
 }

@@ -1,24 +1,25 @@
 // splash_screen.dart — The app-open cinematic ("City Reveal").
 //
 // Claimr's title sequence, built to say what the game is before a single tap:
-// we open tight on your runner in the dark, the camera pulls back while a GPS
-// trail draws itself *along the streets*, rival territory fades up across the
-// city as the view widens, and your loop snaps shut — flooding the enclosed
-// block with your colour.
+// we open tight on your runner in the dark, the camera pulls back over the
+// city while a GPS trail draws itself, the loop snaps shut, the enclosed block
+// floods with your colour, and a flag plants on the corner you sealed.
 //
-// Three ideas carry it, and each one fixes something that reads as amateur:
+// Three ideas carry it, and each one fixes something that read as amateur:
 //
 //  1. The route is defined in GRID CELLS, not free coordinates, so the trail
-//     lands exactly on the street lines. A path that ignores the streets it's
-//     drawn over is the single biggest tell of a fake map.
+//     turns on a consistent lattice instead of wandering. A path that ignores
+//     the geometry it sits on is the single biggest tell of a fake map.
 //  2. A real camera (translate + scale inside the painter) pulls back from the
 //     runner to the city. Camera scale never drops below 1, so the canvas can
 //     never shrink away from the screen edges and expose bare background.
-//  3. Rivals already own turf when you arrive, drawn in the colourblind-safe
-//     ownership palette — the world is contested before you claim anything.
+//  3. The backdrop is a real aerial photograph of a city at night, held well
+//     back — dimmed and tinted — because its streets are not our streets, and
+//     a bright one would advertise the mismatch (assets/images/CREDITS.md).
 //
-// Drawn procedurally rather than played from a Lottie/video: sharp at any
-// size, nothing in the bundle, every beat tunable from the table below.
+// Everything except that photograph is drawn in code rather than played from a
+// Lottie or video: sharp at any size, and every beat tunable from the table
+// below.
 //
 // Plays in full on every app open, by product decision — this is the game's
 // title card, not a loading screen. Skippable from the first moments.
@@ -39,7 +40,6 @@ class _Beat {
   static const gridIn = [0.00, 0.10]; // streets resolve out of black
   static const pullback = [0.00, 0.56]; // camera retreats from runner to city
   static const trail = [0.08, 0.50]; // GPS trail runs the streets
-  static const rivals = [0.16, 0.52]; // rival turf fades up as the view widens
   static const snap = [0.48, 0.56]; // loop closes — flash, sparks, shake
   static const flood = [0.51, 0.72]; // your block floods with colour
   static const shock = [0.51, 0.80]; // shockwave crosses the city
@@ -152,7 +152,6 @@ class _SplashScreenState extends State<SplashScreen>
                       gridIn: _seg(_Beat.gridIn),
                       pull: _seg(_Beat.pullback, c: Curves.easeInOutCubic),
                       trail: _seg(_Beat.trail, c: Curves.easeInOutCubic),
-                      rivals: _seg(_Beat.rivals),
                       snap: _seg(_Beat.snap, c: Curves.linear),
                       flood: _seg(_Beat.flood, c: Curves.easeOutCubic),
                       shock: _seg(_Beat.shock, c: Curves.easeOutCubic),
@@ -304,7 +303,7 @@ class _SplashScreenState extends State<SplashScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _CityPainter extends CustomPainter {
-  final double gridIn, pull, trail, rivals, snap, flood, shock, flag, push, time;
+  final double gridIn, pull, trail, snap, flood, shock, flag, push, time;
   final ui.Image? backdrop;
 
   _CityPainter({
@@ -312,7 +311,6 @@ class _CityPainter extends CustomPainter {
     required this.gridIn,
     required this.pull,
     required this.trail,
-    required this.rivals,
     required this.snap,
     required this.flood,
     required this.shock,
@@ -389,7 +387,6 @@ class _CityPainter extends CustomPainter {
     );
 
     _paintCity(canvas, size, view);
-    if (rivals > 0) _paintRivals(canvas, size);
     if (flood > 0) _paintClaim(canvas, size, path, start);
     if (trail > 0) _paintTrail(canvas, metric);
     if (snap > 0) _paintSnap(canvas, size, start);
@@ -448,9 +445,6 @@ class _CityPainter extends CustomPainter {
     );
     canvas.restore();
   }
-
-  // Rival turf is no longer drawn — the photograph carries the city on its own.
-  void _paintRivals(Canvas canvas, Size size) {}
 
   // Your block. Revealed by growing a circular clip out of the closure point,
   // so the colour visibly floods the territory from where you sealed it.

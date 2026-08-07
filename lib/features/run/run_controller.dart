@@ -75,7 +75,13 @@ class RunController extends Notifier<RunState> {
 
   // Battery at the end, turned into the usage figures. Returns null when we
   // can't say honestly — no reading available, or the phone saw a charger.
-  Future<BatteryUsage?> _batteryUsage() async {
+  // Takes the finished run's figures as arguments rather than reading them
+  // back off `state`: the awaits below give a new run time to start, and this
+  // must describe the run that ended, not whatever is running now.
+  Future<BatteryUsage?> _batteryUsage({
+    required Duration duration,
+    required double distanceMeters,
+  }) async {
     final start = _batteryStart;
     if (start == null) return null;
 
@@ -90,8 +96,8 @@ class RunController extends Notifier<RunState> {
     return BatteryUsage(
       startPercent: start,
       endPercent: end,
-      duration: state.duration,
-      distanceMeters: state.sessionDistanceM,
+      duration: duration,
+      distanceMeters: distanceMeters,
       chargedDuringRun: _chargedDuringRun,
     );
   }
@@ -360,12 +366,32 @@ class RunController extends Notifier<RunState> {
     // Battery last: it needs an async read, and nothing above should wait on
     // measurement. Logged as its own event so a run is still fully recorded on
     // a device that won't report its battery at all.
-    unawaited(_reportBattery());
+    //
+    // The finished run's identity and figures are captured here, before the
+    // await — see _reportBattery.
+    unawaited(_reportBattery(
+      forRun: state.startedAt,
+      duration: state.duration,
+      distanceMeters: state.sessionDistanceM,
+    ));
   }
 
-  Future<void> _reportBattery() async {
-    final usage = await _batteryUsage();
+  Future<void> _reportBattery({
+    required DateTime? forRun,
+    required Duration duration,
+    required double distanceMeters,
+  }) async {
+    final usage = await _batteryUsage(
+      duration: duration,
+      distanceMeters: distanceMeters,
+    );
     if (usage == null) return;
+
+    // The battery read is slow enough that a player can tap Start again before
+    // it lands. Without this guard the finished run's drain would be stamped
+    // onto the new run's state, and the summary would show the wrong number
+    // with no way to tell it was wrong.
+    if (state.startedAt != forRun) return;
 
     // Surface it on the summary screen even when it isn't meaningful enough to
     // log — "charging, not measured" is a better answer than a blank.
@@ -373,8 +399,8 @@ class RunController extends Notifier<RunState> {
 
     if (!usage.isMeaningful) return;
     AnalyticsService.log('run_battery', {
-      'distance_m': state.sessionDistanceM.round(),
-      'duration_s': state.duration.inSeconds,
+      'distance_m': distanceMeters.round(),
+      'duration_s': duration.inSeconds,
       ...usage.toEventProps(),
     });
   }

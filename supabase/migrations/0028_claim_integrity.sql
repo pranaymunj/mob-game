@@ -71,7 +71,7 @@ declare
   earned int; own_union geometry; overlap_m numeric; leveled boolean := false;
   new_part geometry; new_area numeric;
   claim_area numeric; perim numeric; implied numeric;
-  affected uuid[] := '{}'::uuid[]; recent int;
+  affected uuid[] := '{}'::uuid[]; cut_ids uuid[] := '{}'::uuid[]; recent int;
   -- A walked loop cannot enclose a whole city. Generous enough that a long
   -- cycle ride is fine, tight enough that a forged continent is not.
   max_area constant numeric := 2000000;   -- 2 km²
@@ -134,12 +134,22 @@ begin
      where owner_id <> auth.uid()
        and st_intersects(geom, new_geom)
        and (shielded_until is null or shielded_until < now())
-    returning owner_id
+    returning id, owner_id
   )
-  select array_agg(distinct owner_id) into affected from cut;
+  select array_agg(distinct owner_id), array_agg(id)
+    into affected, cut_ids
+    from cut;
   affected := coalesce(affected, '{}'::uuid[]) || auth.uid();
+  cut_ids  := coalesce(cut_ids, '{}'::uuid[]);
 
-  delete from turf where st_isempty(geom) or st_area(geom::geography) < 1;
+  -- Only the rows this claim just carved can have been reduced to a sliver.
+  -- Scanning the whole turf table here — and recomputing a geography area for
+  -- every row in the game — would reintroduce exactly the per-claim full scan
+  -- this migration exists to remove, and could delete slivers belonging to
+  -- players not in `affected`, leaving their totals stale.
+  delete from turf
+   where id = any (cut_ids)
+     and (st_isempty(geom) or st_area(geom::geography) < 1);
 
   -- ── Re-walking your own turf levels it up ────────────────────────────────
   select st_union(geom) into own_union
