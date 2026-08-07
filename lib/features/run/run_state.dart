@@ -29,6 +29,12 @@ class RunState {
   final double? previewGapMeters;
   final double previewAreaM;
 
+  // Trail vulnerability: the instant the OLDEST point on the trail expires and
+  // drops off the start. Stored as an instant, not a remaining duration, so the
+  // countdown keeps ticking between GPS fixes — state only changes when a point
+  // arrives, which on a slow walk can be many seconds apart.
+  final DateTime? trailExpiresAt;
+
   // Run stats (for the summary screen).
   final DateTime? startedAt;
   final DateTime? endedAt;
@@ -55,6 +61,7 @@ class RunState {
     this.samplesUsed = 0,
     this.previewGapMeters,
     this.previewAreaM = 0,
+    this.trailExpiresAt,
     this.startedAt,
     this.endedAt,
     this.sessionDistanceM = 0,
@@ -65,6 +72,22 @@ class RunState {
   Duration get duration => (startedAt == null)
       ? Duration.zero
       : (endedAt ?? DateTime.now()).difference(startedAt!);
+
+  /// Time left before the oldest point drops off, recomputed on read so the
+  /// display counts down without needing new state.
+  Duration? get trailExpiresIn {
+    if (trailExpiresAt == null) return null;
+    final left = trailExpiresAt!.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  // True once the oldest point is close enough to expiring that the player
+  // should be told to close the loop now.
+  bool get trailAtRisk {
+    if (!isActive || trail.length < 2) return false;
+    final left = trailExpiresIn;
+    return left != null && left <= AppConstants.trailExpiryWarning;
+  }
 
   // True when you're close enough to your start, with enough area, to force
   // the claim manually (the "Claim" button rescue).
@@ -79,6 +102,7 @@ class RunState {
     bool? isActive,
     double? previewGapMeters,
     double? previewAreaM,
+    DateTime? trailExpiresAt,
     List<List<double>>? trail,
     List<List<List<double>>>? claims,
     double? lastClaimArea,
@@ -115,6 +139,7 @@ class RunState {
         samplesUsed: samplesUsed ?? this.samplesUsed,
         previewGapMeters: previewGapMeters ?? this.previewGapMeters,
         previewAreaM: previewAreaM ?? this.previewAreaM,
+        trailExpiresAt: trailExpiresAt ?? this.trailExpiresAt,
         startedAt: startedAt ?? this.startedAt,
         endedAt: endedAt ?? this.endedAt,
         sessionDistanceM: sessionDistanceM ?? this.sessionDistanceM,

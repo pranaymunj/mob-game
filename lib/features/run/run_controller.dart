@@ -197,9 +197,11 @@ class RunController extends Notifier<RunState> {
 
     _allPoints.add(point); // full path, kept across loop resets (for ghost runs)
 
-    final trail = [...state.trail, point];
+    var trail = [...state.trail, point];
     _times.add(now);
-    state = state.copyWith(trail: trail);
+    trail = _pruneExpired(trail, now);
+
+    state = state.copyWith(trail: trail, trailExpiresAt: _expiryInstant());
     _updatePreview(trail); // refresh the "close now" chip + button
 
     // Auto-capture: did the newest point close back onto the early path?
@@ -211,6 +213,40 @@ class RunController extends Notifier<RunState> {
           durationS: loopSeconds, closingPoint: point);
     }
   }
+
+  // Trail vulnerability: drop points older than the lifetime off the START of
+  // the trail, so an unclosed loop shrinks and eventually can't be closed.
+  //
+  // `_times` is index-aligned with the trail and loop detection reads
+  // `_times[startIndex]` to time the loop, so the two MUST be trimmed together
+  // — dropping from one alone would silently mis-time every capture, or throw.
+  List<List<double>> _pruneExpired(List<List<double>> trail, DateTime now) {
+    if (trail.length != _times.length) return trail; // never trim out of sync
+
+    final cutoff = now.subtract(AppConstants.trailLifetime);
+    var drop = 0;
+    while (drop < _times.length && _times[drop].isBefore(cutoff)) {
+      drop++;
+    }
+    if (drop == 0) return trail;
+
+    // Always leave the newest point: an empty trail would read as "no run".
+    drop = drop.clamp(0, trail.length - 1);
+    _times.removeRange(0, drop);
+
+    AnalyticsService.log('trail_expired', {
+      'points_dropped': drop,
+      'points_left': trail.length - drop,
+      'lifetime_s': AppConstants.trailLifetime.inSeconds,
+    });
+
+    return trail.sublist(drop);
+  }
+
+  // When the oldest point on the trail will expire. Null while the trail is
+  // empty. The screen derives its countdown from this instant.
+  DateTime? _expiryInstant() =>
+      _times.isEmpty ? null : _times.first.add(AppConstants.trailLifetime);
 
   // Manually force the claim: close the current trail with a straight line back
   // to the start. Rescues a capture when GPS drift stops auto-close firing.
@@ -269,6 +305,7 @@ class RunController extends Notifier<RunState> {
       });
       state = state.copyWith(
         trail: [closingPoint],
+        trailExpiresAt: DateTime.now().add(AppConstants.trailLifetime),
         previewGapMeters: null,
         previewAreaM: 0,
         rejectedCount: state.rejectedCount + 1,
@@ -287,6 +324,7 @@ class RunController extends Notifier<RunState> {
       });
       state = state.copyWith(
         trail: [closingPoint],
+        trailExpiresAt: DateTime.now().add(AppConstants.trailLifetime),
         previewGapMeters: null,
         previewAreaM: 0,
         smallLoopCount: state.smallLoopCount + 1,
@@ -301,6 +339,7 @@ class RunController extends Notifier<RunState> {
     });
     state = state.copyWith(
       trail: [closingPoint],
+      trailExpiresAt: DateTime.now().add(AppConstants.trailLifetime),
       previewGapMeters: null,
       previewAreaM: 0,
       claims: [...state.claims, ring],

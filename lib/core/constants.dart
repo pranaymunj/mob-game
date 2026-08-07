@@ -33,6 +33,23 @@ class AppConstants {
   // when GPS drift stops the auto-close from triggering.
   static const double manualClaimMeters = 100.0;
 
+  // Trail vulnerability (CLAUDE.md Part 8). An open trail is perishable: any
+  // point older than this drops off the START of the trail, so a loop you
+  // dawdle over shrinks until it can no longer be closed. This is the risk
+  // half of the core loop — without it a run has no way to go wrong.
+  //
+  // Keyed to TOTAL AGE, never to idle time: a rule that punished standing
+  // still would punish waiting at a crossing, which fights the game's own
+  // "eyes up, watch your surroundings" advice.
+  //
+  // 12 minutes is roughly 900m at an unhurried walking pace — comfortable for
+  // a city block, tight for a sprawling meander. Tune here after field data,
+  // not by feel.
+  static const Duration trailLifetime = Duration(minutes: 12);
+
+  // Warn the player once the oldest point is this close to expiring.
+  static const Duration trailExpiryWarning = Duration(seconds: 90);
+
   // GPS quality gate: ignore fixes worse than this horizontal accuracy (meters).
   // Filters out jittery indoor/urban-canyon points that would corrupt the trail.
   static const double maxGpsAccuracyMeters = 20.0;

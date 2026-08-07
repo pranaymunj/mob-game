@@ -401,6 +401,13 @@ class _RunScreenState extends ConsumerState<RunScreen>
                     pickupsNearby: _pickups.length,
                     gpsAccuracy: run.gpsAccuracy,
                   ),
+                  // The clock only appears once the trail is genuinely at risk.
+                  // A countdown running from the first step would nag for ten
+                  // minutes and be ignored by the time it mattered.
+                  if (run.trailAtRisk) ...[
+                    const SizedBox(height: 8),
+                    _TrailTimer(remaining: run.trailExpiresIn!),
+                  ],
                 ],
               ],
             ),
@@ -517,6 +524,61 @@ class _StatsPanel extends StatelessWidget {
 
 // The manual-claim rescue button — a pulsing green CTA that appears when you're
 // close enough to force the loop closed.
+// The trail-expiry clock. Shown only once the oldest point is close to
+// dropping off, because a countdown that runs the whole time is wallpaper by
+// the moment it matters.
+//
+// Deliberately states the consequence rather than the mechanic: "loop expires"
+// tells you what you lose, where "trail lifetime 01:12" would need explaining.
+class _TrailTimer extends StatelessWidget {
+  final Duration remaining;
+  const _TrailTimer({required this.remaining});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = remaining.inSeconds;
+    final urgent = s <= 30;
+    final colour = urgent ? AppColors.danger : AppColors.gold;
+    final clock = '${(s ~/ 60).toString().padLeft(2, '0')}:'
+        '${(s % 60).toString().padLeft(2, '0')}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLow.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(AppSpace.radiusSm),
+        border: Border.all(color: colour.withValues(alpha: 0.65), width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(urgent ? Icons.timer : Icons.timer_outlined,
+              size: 17, color: colour),
+          const SizedBox(width: 9),
+          Text(
+            urgent ? 'Close the loop!' : 'Loop expires in',
+            style: TextStyle(
+              color: colour,
+              fontWeight: FontWeight.w700,
+              fontSize: 13.5,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Text(
+            clock,
+            style: TextStyle(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ClaimNowButton extends StatefulWidget {
   final double areaM;
   final VoidCallback onClaim;

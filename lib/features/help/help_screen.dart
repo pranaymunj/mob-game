@@ -27,6 +27,19 @@ class HelpScreen extends StatelessWidget {
                 'Walk loops bigger than ~30 m across for the best results.',
           ),
           _Section(
+            icon: Icons.timer_outlined,
+            title: 'Your trail expires',
+            body:
+                'An open trail only lasts 12 minutes. Once the oldest point '
+                'passes that, it drops off the start of your trail — so a loop '
+                'you take too long over slowly shrinks until it can no longer '
+                'be closed.\n\n'
+                'A timer appears when you have 90 seconds left. It counts total '
+                'time, not time spent moving, so stopping at a crossing is '
+                'never punished — keep your eyes up.\n\n'
+                'Closing a loop resets the clock for the next one.',
+          ),
+          _Section(
             icon: Icons.groups_outlined,
             title: 'Stealing & crews',
             body:
