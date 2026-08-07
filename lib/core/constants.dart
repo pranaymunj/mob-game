@@ -6,6 +6,15 @@ class AppConstants {
 
   static const String appName = 'Claimr';
 
+  // Both app stores require a reachable privacy policy URL, and reviewers do
+  // follow the link. Served from docs/PRIVACY.md via GitHub Pages — see
+  // docs/LAUNCH_GUIDE.md for how to turn that on. If the repo is renamed or
+  // Pages is disabled this link dies silently, so check it before submitting.
+  static const String privacyPolicyUrl =
+      'https://pranaymunj.github.io/mob-game/PRIVACY.html';
+
+  static const String supportEmail = 'munjpranay0@gmail.com';
+
   // Cost discipline (CLAUDE.md Part 5): batch GPS updates, don't stream every frame.
   static const Duration gpsBatchInterval = Duration(seconds: 3);
 

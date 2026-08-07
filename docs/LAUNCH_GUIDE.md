@@ -8,9 +8,19 @@ which you have).
 
 ## 0. Before you build
 
-- [ ] Replace the contact email in [PRIVACY_POLICY.md](PRIVACY_POLICY.md) and
-      **host it at a public URL** (GitHub Pages, Notion public page, or your
-      site). Both stores require a privacy-policy URL for location apps.
+- [ ] **Host the privacy policy.** It lives at [PRIVACY.md](PRIVACY.md). Both
+      stores require a reachable URL for location apps, and reviewers follow the
+      link. Fastest free route — GitHub Pages, about two minutes:
+
+      1. GitHub → your repo → **Settings** → **Pages**
+      2. Source: **Deploy from a branch**; Branch: `main`, folder: `/docs`
+      3. Save, wait ~1 minute, then open
+         <https://pranaymunj.github.io/mob-game/PRIVACY.html> and confirm it
+         loads in a private window (a page only you can see fails review).
+
+      That exact URL is already in the app as `AppConstants.privacyPolicyUrl`
+      and is linked from Settings → Privacy policy. If you host it elsewhere,
+      change the constant to match — a dead link there is a rejection.
 - [ ] Confirm `.env` is filled and **never committed** (it's gitignored).
 - [ ] Pick a final app name / bundle id. Current id: `com.claimr.claimr`.
 - [ ] Bump the version in `pubspec.yaml` (`version: 1.0.0+1` → build number `+1`).
@@ -41,8 +51,17 @@ keyPassword=YOUR_PASSWORD
 keyAlias=upload
 storeFile=/Users/YOU/claimr-upload.jks
 ```
-Then wire it into `android/app/build.gradle` (signingConfigs → release). Ask me
-and I'll edit the Gradle file for you.
+**No Gradle edit needed** — `android/app/build.gradle.kts` already reads
+`key.properties` and uses the release key when the file exists, falling back to
+the debug key when it doesn't. Create the file and the next release build is
+signed.
+
+Two things worth knowing, because both are unrecoverable:
+- **Back up the `.jks` file and its passwords.** Lose them and you can never
+  update this app on Play again — you'd have to ship a new listing and abandon
+  your installs.
+- **Never commit either.** `key.properties` is gitignored; keep the keystore
+  outside the repo entirely.
 
 ### Build the release
 ```bash
@@ -104,8 +123,18 @@ flutter build ipa --release
 
 ## 3. Common review gotchas for location games
 
-- **Justify background location**: we only request *while in use* — do not add
-  "always" unless you build background runs, or review will push back.
+- **Background location — we DO use it, so be ready to justify it.** An earlier
+  version of this guide said we only request "while in use". That is no longer
+  true: the app sets `allowBackgroundLocationUpdates` on iOS and declares
+  `ACCESS_BACKGROUND_LOCATION` on Android, because tracking has to survive a
+  locked screen or the game would force players to walk staring at the phone.
+
+  Declare it honestly and lead with the safety argument. What helps: tracking
+  runs **only during an active run**, iOS shows the blue status-bar indicator
+  throughout, Android shows a persistent notification, and the app auto-pauses
+  at vehicle speed. Answer Play's Location Permissions declaration and Apple's
+  privacy questions to match — a mismatch between what you declare and what the
+  binary does is the most common rejection for location games.
 - **Privacy policy must be reachable** and match the in-app data-delete.
 - **Physical-safety**: our "eyes up" prompt + auto-pause demonstrate diligence;
   keep them.
@@ -116,8 +145,16 @@ flutter build ipa --release
 ## 4. MVP definition of done (from CLAUDE.md Part 8)
 
 - [x] Real map, walk mode, GPS trail, loop capture, turf steal
+- [x] **Trail vulnerability** — an open trail expires after 12 minutes
 - [x] Turf persists on the server, shared across players
 - [x] Local leaderboard
-- [x] Anti-cheat speed gating + privacy (turf, not people) + safety prompts
+- [x] Privacy (turf, not people) + safety prompts + data delete
+- [ ] **Anti-cheat speed gating LIVE** — the code is written, but
+      `supabase/migrations/0028_claim_integrity.sql` has not been applied, so
+      the server is not yet enforcing it. Run it, then run
+      `supabase/maintenance/verify_claim_integrity.sql` to prove it took.
 - [x] Onboarding + run summary + app icon + colorblind palette
+- [ ] Privacy policy hosted at a public URL (§0)
+- [ ] Android upload keystore created (§1)
+- [ ] Tested on a real phone by walking a loop
 - [ ] Builds as a release and passes store review ← **this guide**

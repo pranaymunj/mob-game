@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants.dart';
 import '../../services/notification_service.dart';
@@ -86,13 +87,26 @@ class SettingsScreen extends ConsumerWidget {
             title: Text('Version'),
             subtitle: Text('${AppConstants.appName} 1.0.0'),
           ),
-          const ListTile(
-            leading: Icon(Icons.privacy_tip_outlined),
-            title: Text('Privacy'),
-            subtitle: Text(
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text(
               'Claimr shows turf, never people. Your live location is never '
               'shared. Delete your data anytime from Profile.',
             ),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () async {
+              final uri = Uri.parse(AppConstants.privacyPolicyUrl);
+              // Fall back to a copyable address rather than failing silently —
+              // a dead privacy link is a store-review rejection.
+              if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(AppConstants.privacyPolicyUrl),
+                  ));
+                }
+              }
+            },
           ),
           const SizedBox(height: 24),
         ],
