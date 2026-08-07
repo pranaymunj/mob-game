@@ -198,7 +198,14 @@ class _RunScreenState extends ConsumerState<RunScreen>
     await ref.read(mapServiceProvider).drawGhostPath(path);
   }
 
-  // Animate the 👻 marker stepping along the ghost path (loops).
+  // Animate the 👻 marker stepping along the ghost path, once.
+  //
+  // It used to reset to the start and replay forever. That is a marker move
+  // across the platform channel to the map SDK every 400ms, for the entire
+  // rest of the run, on the screen where the GPS is already running flat out —
+  // the most expensive place in the app to leave something spinning. Watching
+  // your ghost lap the route indefinitely also tells you nothing after the
+  // first pass; tap again to replay it.
   void _toggleGhost() {
     final map = ref.read(mapServiceProvider);
     if (_ghostPlaying) {
@@ -210,7 +217,11 @@ class _RunScreenState extends ConsumerState<RunScreen>
     setState(() => _ghostPlaying = true);
     var i = 0;
     _ghostTimer = Timer.periodic(const Duration(milliseconds: 400), (t) {
-      if (i >= _ghostPath.length) i = 0; // loop the replay
+      if (i >= _ghostPath.length) {
+        t.cancel();
+        if (mounted) setState(() => _ghostPlaying = false);
+        return;
+      }
       map.moveGhostMarker(_ghostPath[i]);
       i++;
     });
@@ -520,10 +531,27 @@ class _ClaimNowButtonState extends State<_ClaimNowButton>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
+  );
+  Timer? _settle;
+
+  @override
+  void initState() {
+    super.initState();
+    _c.repeat(reverse: true);
+
+    // Pulses long enough to be noticed, then holds a steady glow. This button
+    // can sit on screen for the rest of a run, and an animated blur at 60fps
+    // during active GPS tracking is the worst place in the app to spend power.
+    _settle = Timer(const Duration(seconds: 8), () {
+      if (!mounted) return;
+      _c.stop();
+      _c.animateTo(0.5, duration: const Duration(milliseconds: 600));
+    });
+  }
 
   @override
   void dispose() {
+    _settle?.cancel();
     _c.dispose();
     super.dispose();
   }

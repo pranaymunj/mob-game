@@ -1,6 +1,8 @@
-// home_screen.dart — The main menu. Built to feel like a game: living territory
-// art, a player HUD (level / XP / streak), the daily challenge framed as a
-// mission, and one dominant Start Run call-to-action.
+// home_screen.dart — The main menu. Built to feel like a game: a photographic
+// night-city backdrop, a player HUD (level / XP / streak), the daily challenge
+// framed as a mission, and one dominant Start Run call-to-action.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -318,10 +320,28 @@ class _StartRunButtonState extends State<_StartRunButton>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
-  )..repeat(reverse: true);
+  );
+  Timer? _settle;
+
+  @override
+  void initState() {
+    super.initState();
+    _c.repeat(reverse: true);
+
+    // The pulse exists to pull the eye to the CTA when you arrive. After a few
+    // beats it has done that, and all it does is re-render a blurred shadow at
+    // 60fps behind a screen people leave sitting open — battery spent on a
+    // menu, in a game whose real enemy is battery. Settle to a steady glow.
+    _settle = Timer(const Duration(seconds: 9), () {
+      if (!mounted) return;
+      _c.stop();
+      _c.animateTo(0.45, duration: const Duration(milliseconds: 700));
+    });
+  }
 
   @override
   void dispose() {
+    _settle?.cancel();
     _c.dispose();
     super.dispose();
   }

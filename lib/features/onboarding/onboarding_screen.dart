@@ -1,5 +1,10 @@
-// onboarding_screen.dart — 60-second first-run explainer. Shown once; a flag in
-// shared_preferences records that it's been seen.
+// onboarding_screen.dart — the 60-second explainer.
+//
+// Shown on EVERY app open by product decision (see app.dart), not just the
+// first run — so nothing here reads the seen-flag any more. The flag is still
+// written, so that restoring first-run-only gating is a one-line change in
+// app.dart rather than a change that quietly shows onboarding forever because
+// no one was recording that it had been seen.
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,11 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
 
 const _seenKey = 'onboarding_seen_v1';
-
-Future<bool> hasSeenOnboarding() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool(_seenKey) ?? false;
-}
 
 Future<void> _markSeen() async {
   final prefs = await SharedPreferences.getInstance();
