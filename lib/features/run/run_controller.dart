@@ -14,6 +14,7 @@ import '../../core/constants.dart';
 import '../../core/providers.dart';
 import '../../models/run.dart';
 import '../../services/analytics_service.dart';
+import '../../services/battery_service.dart';
 import '../../services/gps_kalman.dart';
 import '../../services/location_service.dart';
 import 'run_state.dart';
@@ -24,6 +25,11 @@ class RunController extends Notifier<RunState> {
   final List<List<double>> _allPoints = []; // full session path (for ghost runs)
   int _samplesSeen = 0; // for the GPS warm-up drop at the start of a run
   GpsKalman _kalman = GpsKalman(); // smooths raw GPS jitter (reset per run)
+
+  // Battery at the moment tracking began, and whether the phone was ever on
+  // charge during the run (which makes the drain figure meaningless).
+  int? _batteryStart;
+  bool _chargedDuringRun = false;
 
   // Runs are always walk mode (its speed cap is what the anti-cheat uses).
   final RunMode _mode = RunMode.walk;
@@ -48,10 +54,46 @@ class RunController extends Notifier<RunState> {
     _allPoints.clear();
     _samplesSeen = 0;
     _kalman = GpsKalman(q: GpsKalman.qFor(_mode.name)); // fresh filter per run
+    _batteryStart = null;
+    _chargedDuringRun = false;
     state = RunState(isActive: true, startedAt: DateTime.now());
     AnalyticsService.log('run_started');
 
+    // Start tracking first. The battery reading is measurement, not gameplay,
+    // so it must never sit between pressing Start and the GPS coming alive.
     _sub = location.positions().listen(_onPoint);
+    unawaited(_sampleBatteryStart());
+  }
+
+  // Battery at the start of the run. A phone already on charge is noted now,
+  // because a run that begins plugged in can't produce a drain figure.
+  Future<void> _sampleBatteryStart() async {
+    final battery = ref.read(batteryServiceProvider);
+    _chargedDuringRun = await battery.isCharging();
+    _batteryStart = await battery.level();
+  }
+
+  // Battery at the end, turned into the usage figures. Returns null when we
+  // can't say honestly — no reading available, or the phone saw a charger.
+  Future<BatteryUsage?> _batteryUsage() async {
+    final start = _batteryStart;
+    if (start == null) return null;
+
+    final battery = ref.read(batteryServiceProvider);
+    // Re-check: plugging in mid-run is exactly the case that would otherwise
+    // report a suspiciously excellent 0% drain.
+    if (await battery.isCharging()) _chargedDuringRun = true;
+
+    final end = await battery.level();
+    if (end == null) return null;
+
+    return BatteryUsage(
+      startPercent: start,
+      endPercent: end,
+      duration: state.duration,
+      distanceMeters: state.sessionDistanceM,
+      chargedDuringRun: _chargedDuringRun,
+    );
   }
 
   // Record why a GPS sample was discarded so the UI can show it live. Guessing
@@ -314,6 +356,27 @@ class RunController extends Notifier<RunState> {
             distanceM: state.sessionDistanceM,
           );
     }
+
+    // Battery last: it needs an async read, and nothing above should wait on
+    // measurement. Logged as its own event so a run is still fully recorded on
+    // a device that won't report its battery at all.
+    unawaited(_reportBattery());
+  }
+
+  Future<void> _reportBattery() async {
+    final usage = await _batteryUsage();
+    if (usage == null) return;
+
+    // Surface it on the summary screen even when it isn't meaningful enough to
+    // log — "charging, not measured" is a better answer than a blank.
+    state = state.copyWith(battery: usage);
+
+    if (!usage.isMeaningful) return;
+    AnalyticsService.log('run_battery', {
+      'distance_m': state.sessionDistanceM.round(),
+      'duration_s': state.duration.inSeconds,
+      ...usage.toEventProps(),
+    });
   }
 }
 

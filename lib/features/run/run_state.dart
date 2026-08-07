@@ -3,6 +3,7 @@
 // end-of-run summary.
 
 import '../../core/constants.dart';
+import '../../services/battery_service.dart';
 
 class RunState {
   final bool isActive;
@@ -34,6 +35,10 @@ class RunState {
   final double sessionDistanceM; // total distance walked this run
   final double sessionAreaM; // total area claimed this run
 
+  // What the run cost in battery. Null until the reading lands after stop(),
+  // and on devices that won't report a level at all.
+  final BatteryUsage? battery;
+
   const RunState({
     this.isActive = false,
     this.trail = const [],
@@ -54,6 +59,7 @@ class RunState {
     this.endedAt,
     this.sessionDistanceM = 0,
     this.sessionAreaM = 0,
+    this.battery,
   });
 
   Duration get duration => (startedAt == null)
@@ -89,6 +95,7 @@ class RunState {
     DateTime? endedAt,
     double? sessionDistanceM,
     double? sessionAreaM,
+    BatteryUsage? battery,
   }) =>
       RunState(
         isActive: isActive ?? this.isActive,
@@ -112,5 +119,6 @@ class RunState {
         endedAt: endedAt ?? this.endedAt,
         sessionDistanceM: sessionDistanceM ?? this.sessionDistanceM,
         sessionAreaM: sessionAreaM ?? this.sessionAreaM,
+        battery: battery ?? this.battery,
       );
 }

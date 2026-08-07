@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/anticheat_service.dart';
 import '../services/backend_service.dart';
+import '../services/battery_service.dart';
 import '../services/geometry_service.dart';
 import '../services/location_service.dart';
 import '../services/mapbox_map_service.dart';
@@ -22,6 +23,10 @@ final geometryServiceProvider =
 
 final antiCheatServiceProvider =
     Provider<AntiCheatService>((ref) => AntiCheatService());
+
+// Typed to the interface so tests can supply scripted battery readings.
+final batteryServiceProvider =
+    Provider<BatteryService>((ref) => DeviceBatteryService());
 
 final backendServiceProvider =
     Provider<SupabaseBackendService>((ref) => SupabaseBackendService());

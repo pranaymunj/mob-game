@@ -5,9 +5,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/theme.dart';
+import 'run_controller.dart';
 
 class RunSummaryScreen extends StatefulWidget {
   final double areaM;
@@ -114,6 +116,48 @@ class _RunSummaryScreenState extends State<RunSummaryScreen> {
                   ],
                 ),
               ),
+            ),
+            // Deliberately OUTSIDE the RepaintBoundary above: this is a
+            // diagnostic, not a brag, and nobody shares "used 6% battery".
+            //
+            // The reading lands asynchronously after the run stops, so this
+            // watches the controller rather than taking a snapshot with the
+            // rest of the stats — otherwise it would always render null.
+            const SizedBox(height: 16),
+            Consumer(
+              builder: (context, ref, _) {
+                final usage =
+                    ref.watch(runControllerProvider.select((s) => s.battery));
+                if (usage == null) return const SizedBox.shrink();
+
+                final String text;
+                if (usage.chargedDuringRun) {
+                  text = 'Battery — not measured (charging)';
+                } else if (!usage.isMeaningful) {
+                  text = 'Battery — run too short to measure';
+                } else {
+                  final perHour = usage.percentPerHour!.toStringAsFixed(1);
+                  final perKm = usage.percentPerKm;
+                  text = 'Battery — ${usage.drainPercent}% used  ·  '
+                      '$perHour%/hr'
+                      '${perKm == null ? '' : '  ·  ${perKm.toStringAsFixed(1)}%/km'}';
+                }
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.battery_5_bar_outlined,
+                        size: 16, color: AppColors.muted),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        text,
+                        style: TextStyle(color: AppColors.muted, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const Spacer(),
             OutlinedButton.icon(
